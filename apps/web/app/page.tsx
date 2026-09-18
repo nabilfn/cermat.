@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import AskWorkspace, { AskScope } from "./components/AskWorkspace";
 import HistoryWorkspace from "./components/HistoryWorkspace";
 
 type DocumentType =
@@ -9,7 +10,7 @@ type DocumentType =
   | "invoice"
   | "receipt";
 
-type Mode = "document" | "transaction" | "history";
+type Mode = "document" | "transaction" | "history" | "ask";
 
 type ExtractionResult = {
   document_id: string;
@@ -154,6 +155,8 @@ async function responseJson<T>(response: Response): Promise<T> {
 
 export default function Home() {
   const [mode, setMode] = useState<Mode>("document");
+  const [askScope, setAskScope] = useState<AskScope>(null);
+  const [historyFocusId, setHistoryFocusId] = useState<string | null>(null);
 
   const [documentType, setDocumentType] =
     useState<DocumentType>("invoice");
@@ -330,12 +333,21 @@ export default function Home() {
         >
           Review history
         </button>
+        <button
+          type="button"
+          className={`modeButton ${mode === "ask" ? "active" : ""}`}
+          onClick={() => setMode("ask")}
+        >
+          Ask cermat.
+        </button>
         <span className="modeHint">
           {mode === "document"
             ? "Extract and inspect one source"
             : mode === "transaction"
               ? "PO ↔ DO ↔ Invoice"
-              : "Open → Review → Resolved"}
+              : mode === "history"
+                ? "Open → Review → Resolved"
+                : "Questions → Records → Evidence"}
         </span>
       </nav>
 
@@ -772,9 +784,28 @@ export default function Home() {
             )}
           </section>
         </section>
-      ) : (
-        <HistoryWorkspace />
-      )}
+      ) : mode === "history" ? (
+        <HistoryWorkspace
+          focusId={historyFocusId}
+          onAsk={(transaction) => {
+            setAskScope(transaction);
+            setMode("ask");
+          }}
+        />
+      ) : null}
+
+      {/* Kept mounted so the Ask session survives switching modes. */}
+      <div hidden={mode !== "ask"}>
+        <AskWorkspace
+          scope={askScope}
+          onScope={setAskScope}
+          onClearScope={() => setAskScope(null)}
+          onOpenTransaction={(id) => {
+            setHistoryFocusId(id);
+            setMode("history");
+          }}
+        />
+      </div>
     </main>
   );
 }

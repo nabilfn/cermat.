@@ -1405,3 +1405,964 @@ button:disabled {
     width: 100%;
   }
 }
+
+/* Phase 5 — Ask cermat. */
+.historyDetailActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.askAboutButton {
+  width: auto;
+  height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.askAboutButton:hover {
+  background: var(--accent);
+}
+
+.askWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+
+.askPanel {
+  padding: 26px;
+  min-width: 0;
+  min-height: 620px;
+}
+
+.askHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.askLede {
+  margin: 14px 0 0;
+  max-width: 560px;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+}
+
+.askScope {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.askScopeLabel {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.askScopeValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  border: 1px solid var(--line);
+  padding: 6px 9px;
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.askScopeValue.scoped {
+  border-color: var(--ink);
+  background: var(--accent);
+}
+
+.askScopeClear {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.askScopeClear:hover {
+  background: var(--ink);
+  color: var(--accent);
+}
+
+.askForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px;
+  margin-top: 26px;
+  border: 1px solid var(--ink);
+  background: white;
+}
+
+.askInput {
+  min-width: 0;
+  height: 64px;
+  border: 0;
+  padding: 0 18px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  outline: none;
+}
+
+.askInput::placeholder {
+  color: #a3a59c;
+}
+
+.askForm:focus-within {
+  box-shadow: 0 0 0 3px rgba(183, 255, 83, 0.55);
+}
+
+.askSubmit {
+  height: 64px;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid var(--ink);
+  font-size: 22px;
+}
+
+.askSubmit:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+.askProgress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.askProgress > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.askProgress.active {
+  color: var(--ink);
+}
+
+.askProgress.active > span::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--ink);
+  background: var(--accent);
+}
+
+.askTextButton {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0 0 1px;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.askTextButton:hover {
+  background: var(--accent);
+}
+
+.askError {
+  margin-top: 6px;
+  border: 1px solid var(--ink);
+  background: #f6dcd6;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.askError span {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.askSuggestions {
+  margin-top: 30px;
+}
+
+.askSuggestion {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: baseline;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 15px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.askSuggestion:last-child {
+  border-bottom: 1px solid var(--line);
+}
+
+.askSuggestion span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.askSuggestion:hover {
+  background: #ecebe3;
+}
+
+.askSuggestion:hover span {
+  color: var(--ink);
+}
+
+.askReport {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ink);
+}
+
+.askReportMeta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.askReportMeta > span:last-child {
+  overflow-wrap: anywhere;
+}
+
+.askOutcome {
+  flex: 0 0 auto;
+  border: 1px solid var(--ink);
+  padding: 4px 6px;
+  background: var(--accent);
+  color: var(--ink);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.askReport:not(.answered) .askOutcome {
+  background: #e7e4da;
+}
+
+.askHeadline {
+  max-width: 860px;
+  margin: 16px 0 18px;
+  font-size: clamp(23px, 2.6vw, 32px);
+  line-height: 1.14;
+  letter-spacing: -0.04em;
+}
+
+.askReport.unsupported .askHeadline,
+.askReport.not_found .askHeadline {
+  color: #3b3e37;
+}
+
+.askPoints {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: askPoint;
+}
+
+.askPoints li {
+  counter-increment: askPoint;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  column-gap: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.askPoints li::before {
+  content: counter(askPoint, decimal-leading-zero);
+  grid-row: 1 / span 3;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 2.1;
+}
+
+.askPointText {
+  overflow-wrap: anywhere;
+}
+
+.askChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sourceChip {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  max-width: 100%;
+  height: 24px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid var(--ink);
+  background: #efeee6;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sourceChip:hover,
+.sourceChip.selected,
+.sourceChip.selected:hover {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+.chipField {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid currentColor;
+  font-weight: 600;
+}
+
+.sourceChip.noSnippet {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.askInlineEvidence {
+  display: none;
+}
+
+.askNotices {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.askNotices li {
+  border-left: 3px solid #f5d87d;
+  padding: 2px 0 2px 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.askResults {
+  margin-top: 30px;
+}
+
+.askIssueRow {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr) minmax(140px, auto) 58px;
+  grid-template-areas: "sev main fig state";
+  gap: 14px;
+  align-items: start;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+
+.askIssueRow > .severity {
+  grid-area: sev;
+  justify-self: start;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.askIssueMain {
+  grid-area: main;
+  min-width: 0;
+}
+
+.askIssueMain strong,
+.askIssueMain > span {
+  display: block;
+}
+
+.askIssueMain strong {
+  font-size: 13px;
+}
+
+.askIssueMain em {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.askIssueMain > span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.askIssueMain > .askChips {
+  display: flex;
+  margin-top: 8px;
+}
+
+.askIssueMain > .askNote {
+  color: #405e29;
+  font-size: 11px;
+}
+
+.askFigures {
+  grid-area: fig;
+  text-align: right;
+}
+
+.askFigures span,
+.askFigures strong {
+  display: block;
+}
+
+.askFigures span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.askFigures strong {
+  margin-top: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.askIssueRow > .issueState {
+  grid-area: state;
+  justify-self: end;
+  margin: 0;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.askTableHead,
+.askTableRow {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+}
+
+.askSupplierGrid {
+  grid-template-columns: minmax(0, 1fr) 64px 64px 64px;
+}
+
+.askTableHead {
+  padding-bottom: 8px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.askTableHead span:not(:first-child),
+.askTableRow span:not(:first-child) {
+  text-align: right;
+}
+
+.askTableRow {
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 13px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.askTableRow:hover {
+  background: #ecebe3;
+}
+
+.askCellPrimary {
+  overflow-wrap: anywhere;
+}
+
+.askTxnRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 104px auto;
+  gap: 14px;
+  align-items: center;
+  padding: 13px 0;
+  border-top: 1px solid var(--line);
+}
+
+.askTxnMain {
+  min-width: 0;
+}
+
+.askTxnMain strong,
+.askTxnMain span {
+  display: block;
+}
+
+.askTxnMain strong {
+  font-size: 13px;
+}
+
+.askTxnMain span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.askTxnSeverity .severity {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.askMissing {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.askTxnRow .workflowState {
+  justify-self: start;
+}
+
+.askTxnActions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.askFollowUps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 28px;
+}
+
+.askFollowUps > span {
+  margin-right: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.askFollowUps button {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.askFollowUps button:hover {
+  border-color: var(--ink);
+  background: #ecebe3;
+}
+
+.askTrace {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 26px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.askLedger {
+  margin-top: 40px;
+}
+
+.askLedgerRow {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.askLedgerRow:hover {
+  background: #ecebe3;
+}
+
+.askLedgerRow span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.askLedgerRow strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.askEvidence {
+  position: sticky;
+  top: 16px;
+  padding: 22px;
+  min-height: 420px;
+}
+
+.askEvidenceHint {
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.askSourceIndex .askEvidenceHint {
+  margin-bottom: 14px;
+}
+
+.askSourceIndexRow {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 11px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.askSourceIndexRow:hover {
+  background: #ecebe3;
+}
+
+.askSourceIndexRow span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.askSourceIndexRow small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.evidenceDetail {
+  margin-top: 22px;
+}
+
+.evidenceDetailTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.evidenceDetailTop strong,
+.evidenceDetailTop small {
+  display: block;
+}
+
+.evidenceDetailTop strong {
+  margin-top: 6px;
+  font-size: 19px;
+  letter-spacing: -0.03em;
+}
+
+.evidenceDetailTop small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.evidenceFacts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 18px 0 0;
+  border: 1px solid var(--line);
+}
+
+.evidenceFacts > div {
+  min-width: 0;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.evidenceFacts > div:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+
+.evidenceFacts > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.evidenceFacts dt {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.evidenceFacts dd {
+  margin: 5px 0 0;
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.evidenceQuote {
+  margin: 14px 0 0;
+  padding: 12px 12px 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: #efeee6;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.evidenceQuote::before {
+  content: "Source snippet";
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.evidenceMissing {
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px dashed #909488;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.evidenceFooter {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.evidenceFooter a {
+  color: var(--ink);
+}
+
+@media (max-width: 1080px) {
+  .askWorkspace {
+    grid-template-columns: minmax(0, 1fr) 290px;
+  }
+
+  .askIssueRow {
+    grid-template-columns: 62px minmax(0, 1fr) 58px;
+    grid-template-areas:
+      "sev main state"
+      "sev fig state";
+  }
+
+  .askFigures {
+    text-align: left;
+  }
+}
+
+@media (max-width: 900px) {
+  .askWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .askEvidence {
+    display: none;
+  }
+
+  .askInlineEvidence {
+    display: block;
+    margin-top: 10px;
+    padding: 14px;
+    border: 1px solid var(--ink);
+    background: var(--panel);
+  }
+
+  .askInlineEvidence .evidenceDetail {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .askPanel {
+    padding: 18px;
+    min-height: auto;
+  }
+
+  .askHeader {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .askLede {
+    font-size: 20px;
+  }
+
+  .askScope {
+    justify-items: start;
+  }
+
+  .askForm {
+    grid-template-columns: minmax(0, 1fr) 54px;
+  }
+
+  .askInput {
+    height: 56px;
+    padding: 0 14px;
+    font-size: 16px;
+  }
+
+  .askSubmit {
+    height: 56px;
+  }
+
+  .askPoints li {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+
+  .askIssueRow {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "sev state"
+      "main main"
+      "fig fig";
+    gap: 8px;
+  }
+
+  .askFigures strong {
+    white-space: normal;
+  }
+
+  .askSupplierGrid {
+    grid-template-columns: minmax(0, 1fr) 40px 40px 40px;
+    gap: 8px;
+  }
+
+  .askTxnRow {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "main main"
+      "sev state"
+      "actions actions";
+    gap: 8px;
+  }
+
+  .askTxnMain {
+    grid-area: main;
+  }
+
+  .askTxnSeverity {
+    grid-area: sev;
+  }
+
+  .askTxnRow .workflowState {
+    grid-area: state;
+  }
+
+  .askTxnActions {
+    grid-area: actions;
+    justify-content: flex-start;
+  }
+
+  .askFollowUps > span {
+    flex-basis: 100%;
+  }
+
+  .historyDetailActions {
+    flex-wrap: wrap;
+  }
+}

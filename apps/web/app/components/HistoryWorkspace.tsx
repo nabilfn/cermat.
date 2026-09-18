@@ -153,9 +153,17 @@ function dateLabel(value: string) {
   }).format(new Date(value));
 }
 
-export default function HistoryWorkspace() {
+type HistoryWorkspaceProps = {
+  focusId?: string | null;
+  onAsk?: (transaction: { id: string; name: string }) => void;
+};
+
+export default function HistoryWorkspace({
+  focusId = null,
+  onAsk,
+}: HistoryWorkspaceProps = {}) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(focusId);
   const [detail, setDetail] = useState<TransactionDetail | null>(null);
   const [issues, setIssues] = useState<ReviewIssue[]>([]);
   const [reconciliation, setReconciliation] =
@@ -230,6 +238,10 @@ export default function HistoryWorkspace() {
     // Load once when the workspace opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (focusId) setSelectedId(focusId);
+  }, [focusId]);
 
   useEffect(() => {
     if (selectedId) {
@@ -371,9 +383,20 @@ export default function HistoryWorkspace() {
                   Updated {dateLabel(detail.updated_at)}
                 </p>
               </div>
-              <span className={`workflowState large ${statusClass(detail.status)}`}>
-                {statusLabel(detail.status)}
-              </span>
+              <div className="historyDetailActions">
+                <span className={`workflowState large ${statusClass(detail.status)}`}>
+                  {statusLabel(detail.status)}
+                </span>
+                {onAsk && (
+                  <button
+                    type="button"
+                    className="askAboutButton"
+                    onClick={() => onAsk({ id: detail.id, name: detail.name })}
+                  >
+                    Ask about this →
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="historySummaryRail">

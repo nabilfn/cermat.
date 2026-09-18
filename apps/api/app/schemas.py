@@ -196,3 +196,221 @@ class ReviewIssueRecord(ReconciliationIssue):
 class ReviewIssueUpdate(BaseModel):
     status: Literal["open", "resolved"]
     resolution_note: str | None = Field(default=None, max_length=1000)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Ask cermat.
+# ---------------------------------------------------------------------------
+
+
+class AskIntent(str, Enum):
+    list_open_issues = "list_open_issues"
+    list_high_severity_issues = "list_high_severity_issues"
+    list_resolved_issues = "list_resolved_issues"
+    transaction_details = "transaction_details"
+    transaction_explanation = "transaction_explanation"
+    supplier_issues = "supplier_issues"
+    supplier_issue_summary = "supplier_issue_summary"
+    price_discrepancies = "price_discrepancies"
+    quantity_discrepancies = "quantity_discrepancies"
+    supplier_mismatches = "supplier_mismatches"
+    currency_mismatches = "currency_mismatches"
+    arithmetic_mismatches = "arithmetic_mismatches"
+    missing_documents = "missing_documents"
+    recent_transactions = "recent_transactions"
+    resolved_transactions = "resolved_transactions"
+    transaction_search = "transaction_search"
+    general_summary = "general_summary"
+    unsupported = "unsupported"
+
+
+IssueFamily = Literal[
+    "price",
+    "quantity",
+    "supplier",
+    "currency",
+    "arithmetic",
+    "missing_item",
+    "unexpected_item",
+    "missing_line_items",
+]
+IssueStatusFilter = Literal["open", "resolved", "any"]
+QuantityDirection = Literal["invoice_over_delivery", "delivery_short_of_order"]
+Severity = Literal["low", "medium", "high"]
+
+
+class AskFilters(BaseModel):
+    supplier: str | None = Field(default=None, max_length=160)
+    severity: Severity | None = None
+    status: IssueStatusFilter | None = None
+    transaction_id: UUID | None = None
+    transaction_ref: str | None = Field(default=None, max_length=160)
+    issue_type: IssueFamily | None = None
+    quantity_direction: QuantityDirection | None = None
+    search: str | None = Field(default=None, max_length=160)
+
+
+class AskPlan(BaseModel):
+    intent: AskIntent
+    filters: AskFilters = Field(default_factory=AskFilters)
+    limit: int = Field(default=20, ge=1, le=50)
+
+
+class AskEntity(BaseModel):
+    """An entity from a previous answer, resolved to a database identity."""
+
+    kind: Literal["transaction", "supplier"]
+    id: str = Field(max_length=160)
+    label: str = Field(max_length=160)
+
+
+class AskConversationContext(BaseModel):
+    """Minimum follow-up state. Never trusted as fact: IDs are re-resolved."""
+
+    previous_question: str | None = Field(default=None, max_length=500)
+    previous_intent: AskIntent | None = None
+    entities: list[AskEntity] = Field(default_factory=list, max_length=12)
+
+
+class AskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+    transaction_id: UUID | None = None
+    context: AskConversationContext | None = None
+
+
+class AskSource(BaseModel):
+    """One traceable piece of evidence, rendered as a source chip."""
+
+    id: str
+    label: str
+    document_id: UUID
+    filename: str
+    document_type: DocumentType
+    document_number: str | None
+    transaction_id: UUID
+    transaction_name: str
+    page: int | None
+    field_path: str
+    value: str | None
+    source_text: str
+    confidence: float | None
+    snippet_available: bool
+    # Interface contract for a future page viewer. Always null in Phase 5.
+    preview_url: str | None = None
+
+
+class AskVariance(BaseModel):
+    """Variance calculated in Python from the persisted expected/actual values."""
+
+    kind: Literal["money", "quantity"]
+    currency: str | None
+    expected: float
+    actual: float
+    delta: float
+    percentage: float | None
+    billed_impact: float | None = None
+
+
+class AskIssueRow(BaseModel):
+    issue_id: UUID
+    transaction_id: UUID
+    transaction_name: str
+    supplier: str | None
+    code: str
+    family: str
+    title: str
+    severity: Severity
+    status: Literal["open", "resolved"]
+    item_description: str | None
+    expected: str | None
+    actual: str | None
+    delta: str | None
+    variance: AskVariance | None
+    explanation: str
+    resolution_note: str | None
+    resolved_at: datetime | None
+    source_ids: list[str]
+
+
+class AskTransactionRow(BaseModel):
+    transaction_id: UUID
+    name: str
+    supplier: str | None
+    status: TransactionStatus
+    currency: str | None
+    total: float | None
+    document_types: list[DocumentType]
+    missing_document_types: list[DocumentType]
+    open_issue_count: int
+    resolved_issue_count: int
+    highest_open_severity: Severity | None
+    updated_at: datetime
+
+
+class AskSupplierRow(BaseModel):
+    supplier: str
+    transaction_count: int
+    open_issue_count: int
+    resolved_issue_count: int
+    high_open_count: int
+    transaction_ids: list[UUID]
+    open_by_family: dict[str, int]
+
+
+class AskMetrics(BaseModel):
+    """Counts computed by backend code. The model may only restate them."""
+
+    transaction_count: int = 0
+    issue_count: int = 0
+    open_issue_count: int = 0
+    resolved_issue_count: int = 0
+    by_severity: dict[str, int] = Field(default_factory=dict)
+    by_family: dict[str, int] = Field(default_factory=dict)
+    by_status: dict[str, int] = Field(default_factory=dict)
+    supplier_count: int = 0
+
+
+class AskAnswerPoint(BaseModel):
+    text: str
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class AskAnswer(BaseModel):
+    headline: str
+    points: list[AskAnswerPoint] = Field(default_factory=list)
+
+
+class AskResponse(BaseModel):
+    question: str
+    intent: AskIntent
+    filters: AskFilters
+    scope: Literal["workspace", "transaction"]
+    scope_transaction_id: UUID | None
+    scope_transaction_name: str | None
+    outcome: Literal["answered", "no_results", "unsupported", "not_found"]
+    answer: AskAnswer
+    answer_mode: Literal["model", "records"]
+    metrics: AskMetrics
+    result_kind: Literal["issues", "transactions", "suppliers", "none"]
+    issues: list[AskIssueRow]
+    transactions: list[AskTransactionRow]
+    suppliers: list[AskSupplierRow]
+    sources: list[AskSource]
+    notices: list[str]
+    follow_up_suggestions: list[str]
+    context: AskConversationContext
+
+
+class AskSuggestions(BaseModel):
+    scope: Literal["workspace", "transaction"]
+    suggestions: list[str]
+
+
+class TransactionContext(BaseModel):
+    """The compact, grounded record set Ask cermat. uses for one transaction."""
+
+    transaction: AskTransactionRow
+    documents: list[TransactionDocumentSummary]
+    issues: list[AskIssueRow]
+    sources: list[AskSource]
+    reconciled_at: datetime | None
