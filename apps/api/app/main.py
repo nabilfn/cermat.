@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from enum import Enum
 from pathlib import Path
-from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+
+from app.config import settings
+from app.schemas import (
+    DocumentRecord,
+    DocumentType,
+    ExtractionResult,
+    ReconciliationDemo,
+    ReconciliationIssue,
+)
+from app.services.extraction import extract_document as run_ai_extraction
 
 app = FastAPI(
     title="cermat. API",
-    version="0.1.0",
-    description="Document intelligence and reconciliation API for cermat.",
+    version="0.2.0",
+    description="Evidence-backed document intelligence and reconciliation API for cermat.",
 )
 
 app.add_middleware(
@@ -24,69 +32,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-class DocumentType(str, Enum):
-    purchase_order = "purchase_order"
-    delivery_order = "delivery_order"
-    invoice = "invoice"
-    receipt = "receipt"
-
-
-class DocumentRecord(BaseModel):
-    id: UUID
-    filename: str
-    document_type: DocumentType
-    status: Literal["uploaded", "extracted", "needs_review"]
-    created_at: datetime
-
-
-class Evidence(BaseModel):
-    field: str
-    source_text: str
-    page: int | None = None
-    confidence: float = Field(ge=0, le=1)
-
-
-class ExtractedLineItem(BaseModel):
-    description: str
-    quantity: float
-    unit_price: float
-    line_total: float
-
-
-class ExtractionResult(BaseModel):
-    document_id: UUID
-    supplier_name: str | None
-    document_number: str | None
-    currency: str
-    subtotal: float | None
-    tax: float | None
-    total: float | None
-    confidence: float = Field(ge=0, le=1)
-    line_items: list[ExtractedLineItem]
-    evidence: list[Evidence]
-    note: str
-
-
-class ReconciliationIssue(BaseModel):
-    field: str
-    expected: str
-    actual: str
-    severity: Literal["low", "medium", "high"]
-    explanation: str
-
-
-class ReconciliationDemo(BaseModel):
-    status: Literal["matched", "review_required"]
-    issues: list[ReconciliationIssue]
-
+ALLOWED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+}
 
 DOCUMENTS: dict[UUID, DocumentRecord] = {}
+DOCUMENT_PATHS: dict[UUID, Path] = {}
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "cermat-api"}
+async def health() -> dict[str, str | bool]:
+    return {
+        "status": "ok",
+        "service": "cermat-api",
+        "model": settings.openai_model,
+        "ai_configured": bool(settings.openai_api_key),
+    }
 
 
 @app.post("/api/v1/documents", response_model=DocumentRecord)
@@ -94,22 +59,38 @@ async def create_document(
     file: UploadFile = File(...),
     document_type: DocumentType = Form(...),
 ) -> DocumentRecord:
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in {".pdf", ".png", ".jpg", ".jpeg", ".webp"}:
+    filename = file.filename or "uploaded-document"
+    suffix = Path(filename).suffix.lower()
+    mime_type = file.content_type or "application/octet-stream"
+
+    if suffix not in ALLOWED_SUFFIXES or mime_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=400,
-            detail="Supported file types: PDF, PNG, JPG, JPEG, WEBP.",
+            detail="Supported file types: PDF, PNG, JPG/JPEG, and WEBP.",
         )
 
+    contents = await file.read(settings.max_upload_bytes + 1)
+    if len(contents) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail="File is larger than 15 MB.")
+    if not contents:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    document_id = uuid4()
+    stored_path = settings.data_dir / f"{document_id}{suffix}"
+    stored_path.write_bytes(contents)
+
     record = DocumentRecord(
-        id=uuid4(),
-        filename=file.filename or "uploaded-document",
+        id=document_id,
+        filename=filename,
         document_type=document_type,
+        mime_type=mime_type,
+        size_bytes=len(contents),
         status="uploaded",
         created_at=datetime.now(timezone.utc),
     )
-    DOCUMENTS[record.id] = record
-    await file.read()
+
+    DOCUMENTS[document_id] = record
+    DOCUMENT_PATHS[document_id] = stored_path
     return record
 
 
@@ -124,42 +105,40 @@ async def get_document(document_id: UUID) -> DocumentRecord:
 @app.post("/api/v1/documents/{document_id}/extract", response_model=ExtractionResult)
 async def extract_document(document_id: UUID) -> ExtractionResult:
     record = DOCUMENTS.get(document_id)
-    if not record:
+    path = DOCUMENT_PATHS.get(document_id)
+
+    if not record or not path or not path.exists():
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    # Phase 1 placeholder:
-    # This contract will be backed by actual PDF/image parsing + multimodal
-    # structured extraction in the next build.
-    extracted = ExtractionResult(
-        document_id=document_id,
-        supplier_name="Demo Supplier Sdn. Bhd.",
-        document_number="INV-DEMO-001",
-        currency="MYR",
-        subtotal=480.00,
-        tax=28.80,
-        total=508.80,
-        confidence=0.94,
-        line_items=[
-            ExtractedLineItem(
-                description="Office supply item",
-                quantity=4,
-                unit_price=120.00,
-                line_total=480.00,
-            )
-        ],
-        evidence=[
-            Evidence(
-                field="total",
-                source_text="Total RM 508.80",
-                page=1,
-                confidence=0.98,
-            )
-        ],
-        note="Demo extraction contract. Replace with real multimodal extraction next.",
-    )
+    DOCUMENTS[document_id] = record.model_copy(update={"status": "extracting"})
 
-    DOCUMENTS[document_id] = record.model_copy(update={"status": "extracted"})
-    return extracted
+    try:
+        extracted = await run_in_threadpool(
+            run_ai_extraction,
+            path=path,
+            mime_type=record.mime_type,
+            filename=record.filename,
+            document_type=record.document_type,
+        )
+    except RuntimeError as exc:
+        DOCUMENTS[document_id] = record.model_copy(update={"status": "failed"})
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        DOCUMENTS[document_id] = record.model_copy(update={"status": "failed"})
+        raise HTTPException(
+            status_code=502,
+            detail="AI extraction failed. Check the API logs and model configuration.",
+        ) from exc
+
+    final_status = "needs_review" if extracted.review_reasons else "extracted"
+    DOCUMENTS[document_id] = record.model_copy(update={"status": final_status})
+
+    return ExtractionResult(
+        document_id=document_id,
+        filename=record.filename,
+        model=settings.openai_model,
+        **extracted.model_dump(),
+    )
 
 
 @app.get("/api/v1/reconciliation/demo", response_model=ReconciliationDemo)

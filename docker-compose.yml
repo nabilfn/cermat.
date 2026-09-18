@@ -20,10 +20,14 @@ services:
       context: ./apps/api
     environment:
       DATABASE_URL: postgresql+asyncpg://cermat:cermat@db:5432/cermat
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.6-luna}
+      DATA_DIR: /app/data/uploads
     ports:
       - "8000:8000"
     volumes:
       - ./apps/api:/app
+      - cermat_uploads:/app/data/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -44,3 +48,4 @@ services:
 
 volumes:
   cermat_pg:
+  cermat_uploads:

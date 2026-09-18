@@ -9,30 +9,41 @@ type DocumentType =
   | "receipt";
 
 type ExtractionResult = {
+  document_id: string;
+  filename: string;
+  model: string;
   supplier_name: string | null;
+  supplier_registration_no: string | null;
   document_number: string | null;
-  currency: string;
+  document_date: string | null;
+  currency: string | null;
   subtotal: number | null;
   tax: number | null;
   total: number | null;
-  confidence: number;
+  overall_confidence: number;
   line_items: Array<{
     description: string;
-    quantity: number;
-    unit_price: number;
-    line_total: number;
+    sku: string | null;
+    quantity: number | null;
+    unit_price: number | null;
+    line_total: number | null;
   }>;
   evidence: Array<{
-    field: string;
+    field_path: string;
     source_text: string;
     page: number | null;
     confidence: number;
   }>;
-  note: string;
+  review_reasons: string[];
 };
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+function money(currency: string | null, value: number | null) {
+  if (value === null) return "—";
+  return `${currency ?? ""} ${value.toFixed(2)}`.trim();
+}
 
 export default function Home() {
   const [documentType, setDocumentType] =
@@ -70,7 +81,7 @@ export default function Home() {
       }
 
       const uploaded = await uploadResponse.json();
-      setStatus("Extracting");
+      setStatus("Reading document");
 
       const extractionResponse = await fetch(
         `${API_URL}/api/v1/documents/${uploaded.id}/extract`,
@@ -78,12 +89,15 @@ export default function Home() {
       );
 
       if (!extractionResponse.ok) {
-        throw new Error("Extraction failed.");
+        const payload = await extractionResponse.json();
+        throw new Error(payload.detail ?? "Extraction failed.");
       }
 
       const extraction = await extractionResponse.json();
       setResult(extraction);
-      setStatus("Review ready");
+      setStatus(
+        extraction.review_reasons.length > 0 ? "Review needed" : "Review ready"
+      );
     } catch (err) {
       setStatus("Ready");
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -148,7 +162,7 @@ export default function Home() {
             <span className="dropMeta">
               {file
                 ? `${Math.max(file.size / 1024, 1).toFixed(0)} KB`
-                : "PDF · PNG · JPG · WEBP"}
+                : "PDF · PNG · JPG · WEBP · MAX 15 MB"}
             </span>
           </label>
 
@@ -156,7 +170,7 @@ export default function Home() {
 
           <div className="processing">
             <span>{status}</span>
-            <span>{status === "Review ready" ? "100%" : "—"}</span>
+            <span>{result ? "100%" : "—"}</span>
           </div>
 
           {error && <p className="error">{error}</p>}
@@ -179,10 +193,13 @@ export default function Home() {
               <div className="resultHeader">
                 <div>
                   <p className="resultKicker">Extraction complete</p>
-                  <h2>{result.supplier_name}</h2>
+                  <h2>{result.supplier_name ?? "Supplier not detected"}</h2>
+                  <p className="resultMeta">
+                    {result.filename} · {result.model}
+                  </p>
                 </div>
                 <div className="confidence">
-                  {(result.confidence * 100).toFixed(0)}%
+                  {(result.overall_confidence * 100).toFixed(0)}%
                   <span>confidence</span>
                 </div>
               </div>
@@ -190,60 +207,87 @@ export default function Home() {
               <div className="facts">
                 <div>
                   <span>Document</span>
-                  <strong>{result.document_number}</strong>
+                  <strong>{result.document_number ?? "—"}</strong>
+                </div>
+                <div>
+                  <span>Date</span>
+                  <strong>{result.document_date ?? "—"}</strong>
                 </div>
                 <div>
                   <span>Subtotal</span>
-                  <strong>
-                    {result.currency} {result.subtotal?.toFixed(2)}
-                  </strong>
-                </div>
-                <div>
-                  <span>Tax</span>
-                  <strong>
-                    {result.currency} {result.tax?.toFixed(2)}
-                  </strong>
+                  <strong>{money(result.currency, result.subtotal)}</strong>
                 </div>
                 <div>
                   <span>Total</span>
-                  <strong>
-                    {result.currency} {result.total?.toFixed(2)}
-                  </strong>
+                  <strong>{money(result.currency, result.total)}</strong>
                 </div>
               </div>
 
               <div className="lineItems">
+                <div className="sectionTitleRow">
+                  <span>Line items</span>
+                  <span>{result.line_items.length}</span>
+                </div>
                 <div className="tableHead">
                   <span>Item</span>
                   <span>Qty</span>
                   <span>Unit</span>
                   <span>Total</span>
                 </div>
-                {result.line_items.map((item, index) => (
-                  <div className="tableRow" key={index}>
-                    <span>{item.description}</span>
-                    <span>{item.quantity}</span>
-                    <span>{item.unit_price.toFixed(2)}</span>
-                    <span>{item.line_total.toFixed(2)}</span>
+                {result.line_items.length === 0 ? (
+                  <div className="tableEmpty">No reliable line items detected.</div>
+                ) : (
+                  result.line_items.map((item, index) => (
+                    <div className="tableRow" key={index}>
+                      <span>
+                        {item.description}
+                        {item.sku && <small>{item.sku}</small>}
+                      </span>
+                      <span>{item.quantity ?? "—"}</span>
+                      <span>
+                        {item.unit_price === null
+                          ? "—"
+                          : item.unit_price.toFixed(2)}
+                      </span>
+                      <span>
+                        {item.line_total === null
+                          ? "—"
+                          : item.line_total.toFixed(2)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {result.review_reasons.length > 0 && (
+                <div className="reviewBox">
+                  <span className="evidenceLabel">Human review</span>
+                  {result.review_reasons.map((reason) => (
+                    <p key={reason}>{reason}</p>
+                  ))}
+                </div>
+              )}
+
+              <div className="evidenceList">
+                <div className="sectionTitleRow">
+                  <span>Evidence</span>
+                  <span>{result.evidence.length}</span>
+                </div>
+                {result.evidence.slice(0, 8).map((evidence, index) => (
+                  <div className="evidence" key={`${evidence.field_path}-${index}`}>
+                    <div>
+                      <span className="evidenceLabel">
+                        {evidence.field_path}
+                      </span>
+                      <strong>{evidence.source_text}</strong>
+                    </div>
+                    <span>
+                      p.{evidence.page ?? "—"} ·{" "}
+                      {(evidence.confidence * 100).toFixed(0)}%
+                    </span>
                   </div>
                 ))}
               </div>
-
-              <div className="evidence">
-                <div>
-                  <span className="evidenceLabel">Evidence</span>
-                  <strong>{result.evidence[0]?.source_text}</strong>
-                </div>
-                <span>
-                  p.{result.evidence[0]?.page ?? "—"} ·{" "}
-                  {(
-                    (result.evidence[0]?.confidence ?? 0) * 100
-                  ).toFixed(0)}
-                  %
-                </span>
-              </div>
-
-              <p className="stubNote">{result.note}</p>
             </>
           )}
         </section>

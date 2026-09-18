@@ -1,32 +1,50 @@
 # cermat.
 
-**cermat.** is an AI operations agent for SMEs that turns business documents into structured records, reconciles them across workflows, and surfaces discrepancies with evidence.
+**cermat.** is an AI operations agent for SMEs that reads business documents, converts them into structured records, cross-checks related documents, and surfaces discrepancies with source evidence.
 
-## First vertical slice
+## Phase 2: real document extraction
 
-This starter focuses on one workflow:
+This build now supports real multimodal extraction for:
 
-1. Upload an invoice, purchase order, delivery order, or receipt.
-2. Create a document record.
-3. Run extraction.
-4. Normalize key fields.
-5. Compare documents in a transaction set.
-6. Flag mismatches for human review.
+- Purchase Orders
+- Delivery Orders
+- Invoices
+- Receipts
+- PDF, PNG, JPG/JPEG, WEBP
+- line items
+- totals and document metadata
+- field-level evidence snippets
+- confidence scores
+- human-review reasons
 
-The extraction endpoint is deliberately a stub in this first build. The API contract and UI are ready so the actual multimodal/LLM extraction layer can be plugged in next without rebuilding the product around it.
+The extraction layer uses the OpenAI Responses API with structured Pydantic output. The model is configurable with `OPENAI_MODEL`.
 
 ## Stack
 
 - Web: Next.js + React + TypeScript
 - API: FastAPI + Pydantic
-- Database: PostgreSQL
-- Vector extension: pgvector-ready PostgreSQL image
+- AI: OpenAI Responses API, multimodal structured extraction
+- Database: PostgreSQL / pgvector-ready
 - Local dev: Docker Compose
 
 ## Run
 
+Create `.env`:
+
 ```bash
 cp .env.example .env
+```
+
+Set your API key:
+
+```env
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-5.6-luna
+```
+
+Then:
+
+```bash
 docker compose up --build
 ```
 
@@ -35,26 +53,20 @@ Open:
 - Web: http://localhost:3000
 - API: http://localhost:8000
 - Swagger: http://localhost:8000/docs
+- Health/config check: http://localhost:8000/health
 
-## What works now
+## Phase 2 architecture rule
 
-- Upload UI
-- Document-type selection
-- API document creation
-- Extraction contract
-- Review result UI
-- Health endpoint
-- PostgreSQL service ready for persistence
+The model **extracts what the document says**. It does not decide whether the business transaction is correct.
 
-## Next build
+The next phase adds deterministic reconciliation for:
 
-Replace the extraction stub with:
+```text
+PO ↔ DO ↔ Invoice ↔ Receipt
+```
 
-- PDF/image parsing
-- multimodal model extraction
-- structured JSON validation
-- line-item extraction
-- evidence spans/page references
-- confidence scores
-- reconciliation rules
-- PostgreSQL persistence
+That engine will recalculate quantities, prices, totals and variances in code, while the AI layer remains responsible for perception and explanation.
+
+## Current persistence note
+
+Uploaded files are stored in a Docker volume, but document metadata is still kept in process memory. PostgreSQL persistence is the next infrastructure step alongside transaction sets and reconciliation.
