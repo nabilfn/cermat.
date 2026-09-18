@@ -1,42 +1,39 @@
-# Product definition — Phase 3
+# Product definition
 
 ## One-line pitch
 
-cermat. reads SME purchase documents and tells an operator exactly where the PO, delivery and invoice disagree, with the source evidence attached.
+cermat. is an AI operations agent that reads SME business documents, reconciles purchase records, and keeps an evidence-backed human review trail for every exception.
 
 ## Initial user
 
-Finance, procurement or operations staff who manually compare purchase orders, delivery orders and supplier invoices.
+An SME operations or finance staff member who currently checks purchase orders, delivery orders, invoices, and receipts manually.
 
 ## Core job-to-be-done
 
-> Given the records for a purchase, show me whether what we ordered, what arrived and what we were billed for agree — without making me re-key every document.
+> Given the documents for a purchase, tell me whether what was ordered, delivered, invoiced, and paid matches; show me the evidence for any mismatch; and keep track of what my team has already reviewed.
 
-## Phase 3 inputs
+## Current workflow
 
-- Purchase Order
-- Delivery Order
-- Invoice
+1. Document intake
+2. AI extraction
+3. Structured validation
+4. Deterministic three-way reconciliation
+5. Persistent exception queue
+6. Human resolution/reopen
+7. Searchable transaction history
 
-Receipt extraction remains supported but is not yet part of the three-way matching rules.
+## Workflow states
 
-## Phase 3 exception classes
-
-- currency mismatch
-- supplier mismatch
-- missing line item
-- unexpected delivery line
-- unexpected invoice line
-- ordered/delivered quantity variance
-- delivered/invoiced quantity variance
-- PO/invoice unit-price variance
-- invoice line arithmetic mismatch
+- Open
+- Needs review
+- Resolved
+- Matched
 
 ## Product principles
 
-- Preserve the original extracted value.
-- Surface uncertainty instead of inventing certainty.
-- Prefer identifiers over fuzzy matching.
-- Keep AI perception separate from deterministic calculations.
-- Attach evidence to exceptions whenever available.
-- Make human review the final authority.
+- Never silently mutate extracted data.
+- Preserve source evidence for important fields.
+- Separate model extraction from deterministic business rules.
+- Preserve human decisions across reconciliation reruns.
+- A materially changed discrepancy must become a new review item.
+- Keep history operational and compact rather than turning it into a decorative analytics dashboard.

@@ -1,77 +1,48 @@
 # cermat.
 
-**cermat.** is an AI operations agent for SMEs that reads purchase documents, converts them into structured records, and deterministically reconciles what was ordered, delivered, and invoiced.
+**cermat.** is an AI operations agent for SMEs that reads business documents, turns them into structured records, reconciles related documents with deterministic rules, and routes discrepancies through a human review workflow.
 
-## Phase 3: transaction reconciliation
+## Phase 4
 
-This build adds the first core operations workflow:
+Phase 4 adds the persistent operating layer around the Phase 3 reconciliation engine:
 
-```text
-Purchase Order  ↔  Delivery Order  ↔  Invoice
-       AI extraction      ↓
-                 deterministic matching
-                          ↓
-              evidence-backed exceptions
-```
+1. Upload a PO, delivery order, and invoice.
+2. Extract each source with the multimodal AI layer.
+3. Run deterministic three-way matching.
+4. Persist every reconciliation exception as a review issue.
+5. Search transaction history.
+6. Open a historical transaction and inspect its evidence.
+7. Resolve or reopen individual issues with an optional resolution note.
+8. Move the transaction from `Needs review` to `Resolved` when all active issues are closed.
 
-### What works
-
-- real PDF/image extraction through the OpenAI Responses API
-- structured supplier, document, total and line-item data
-- field-level source evidence and extraction confidence
-- PostgreSQL persistence for document metadata, extraction payloads and transaction sets
-- persisted uploaded files in a Docker volume
-- transaction sets linking one PO, DO and invoice
-- SKU-first line-item matching
-- description-similarity fallback when SKU is unavailable
-- ordered-vs-delivered quantity checks
-- delivered-vs-invoiced quantity checks
-- PO-vs-invoice unit-price checks
-- invoice line arithmetic checks
-- supplier and currency consistency checks
-- evidence references attached to reconciliation exceptions
-- persisted latest reconciliation result
-
-## Architecture rule
-
-The AI layer is responsible for **perception**:
-
-> What does this document actually say?
-
-The reconciliation layer is responsible for **business comparisons**:
-
-> Do the extracted values agree?
-
-The reconciliation engine does not ask the model to judge arithmetic or variances. It uses deterministic Python code and preserves the extracted source values.
+A stable issue identity prevents rerunning the same reconciliation from creating duplicate review items. If the business exception materially changes, cermat. opens a new issue instead of silently reusing the old decision.
 
 ## Stack
 
 - Web: Next.js + React + TypeScript
 - API: FastAPI + Pydantic
-- AI: OpenAI Responses API with structured multimodal extraction
-- Database: PostgreSQL (pgvector-ready image)
-- ORM: SQLAlchemy async + asyncpg
-- Local runtime: Docker Compose
+- Database: PostgreSQL
+- Vector extension: pgvector-ready PostgreSQL image
+- AI extraction: OpenAI Responses API with structured extraction
+- Reconciliation: deterministic Python rules
+- Local development: Docker Compose
 
 ## Run
-
-Create `.env` if you have not already:
 
 ```bash
 cp .env.example .env
 ```
 
-Set your OpenAI key:
+Add your API key to `.env`:
 
 ```env
-OPENAI_API_KEY=your_api_key_here
+OPENAI_API_KEY=your_key_here
 OPENAI_MODEL=gpt-5.6-luna
 ```
 
-Then rebuild:
+Then:
 
 ```bash
-docker compose down
 docker compose up --build
 ```
 
@@ -80,56 +51,56 @@ Open:
 - Web: http://localhost:3000
 - API: http://localhost:8000
 - Swagger: http://localhost:8000/docs
-- Health: http://localhost:8000/health
 
-The API creates its development tables automatically on startup. A later production-hardening phase should replace `create_all` with Alembic migrations.
+## Workspace modes
 
-## Three-way match workflow
+### Single document
 
-In the web app choose **Three-way match** and add:
+Extract one PO, DO, invoice, or receipt and inspect structured fields, line items, confidence, and source evidence.
 
-1. Purchase Order
-2. Delivery Order
-3. Invoice
+### Three-way match
 
-cermat. will:
+Upload one PO + DO + Invoice. cermat. compares ordered, delivered, and invoiced values using deterministic rules.
 
-1. store each file
-2. extract each document independently
-3. persist the structured result
-4. create a transaction set
-5. link the documents
-6. match line items
-7. run deterministic variance checks
-8. return issues with source evidence
+### Review history
 
-### Example
+Browse persisted transactions, search by transaction/supplier, filter by workflow state, inspect historical evidence, and resolve/reopen exceptions.
 
-```text
-PO:       Office Chair × 10 @ RM42
-DO:       Office Chair × 8
-Invoice:  Office Chair × 10 @ RM44
+## Workflow states
+
+- **Open** — transaction is still collecting documents or waiting for reconciliation.
+- **Needs review** — reconciliation found one or more active unresolved exceptions.
+- **Resolved** — all active exceptions have been reviewed and closed by a human.
+- **Matched** — deterministic reconciliation found no exceptions.
+
+## Review issue persistence
+
+Each reconciliation exception gets a stable hash based on the business meaning of the discrepancy — code, item, expected/actual values, and source field locations. This means:
+
+- rerunning an unchanged transaction preserves its existing review status and note;
+- a changed discrepancy receives a new review issue;
+- exceptions that disappear on a later reconciliation become inactive rather than polluting the active queue.
+
+## Tests
+
+```bash
+docker compose exec api python -m unittest discover -s tests -v
 ```
 
-The engine flags:
+The test suite covers clean matching, quantity/price mismatches, and stable review-issue identity.
 
-- delivered quantity differs from ordered quantity
-- invoiced quantity differs from delivered quantity
-- invoice unit price differs from the PO
+## Important architecture boundary
 
-No model is asked to decide whether `42 != 44`.
+The AI layer answers:
 
-## Current limitations
+> What does this document say?
 
-Phase 3 intentionally keeps the rule engine conservative:
+The reconciliation layer answers:
 
-- one PO, one DO and one invoice per transaction set
-- item matching is SKU-first with description similarity as fallback
-- no configurable business tolerance policy yet
-- no split deliveries or multiple invoices yet
-- no credit notes
-- no receipt/payment reconciliation yet
-- no user accounts / tenant isolation yet
-- no Alembic migrations yet
+> Do these values agree?
 
-Those are good next steps after the core matching workflow is stable.
+The review layer answers:
+
+> Has a human accepted or resolved this exception?
+
+Keeping those responsibilities separate makes cermat. easier to test, audit, and explain.

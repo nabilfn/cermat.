@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import HistoryWorkspace from "./components/HistoryWorkspace";
 
 type DocumentType =
   | "purchase_order"
@@ -8,7 +9,7 @@ type DocumentType =
   | "invoice"
   | "receipt";
 
-type Mode = "document" | "transaction";
+type Mode = "document" | "transaction" | "history";
 
 type ExtractionResult = {
   document_id: string;
@@ -322,10 +323,19 @@ export default function Home() {
         >
           Three-way match
         </button>
+        <button
+          type="button"
+          className={`modeButton ${mode === "history" ? "active" : ""}`}
+          onClick={() => setMode("history")}
+        >
+          Review history
+        </button>
         <span className="modeHint">
           {mode === "document"
             ? "Extract and inspect one source"
-            : "PO ↔ DO ↔ Invoice"}
+            : mode === "transaction"
+              ? "PO ↔ DO ↔ Invoice"
+              : "Open → Review → Resolved"}
         </span>
       </nav>
 
@@ -502,7 +512,7 @@ export default function Home() {
             )}
           </section>
         </section>
-      ) : (
+      ) : mode === "transaction" ? (
         <section className="workspace transactionWorkspace">
           <form className="panel transactionIntake" onSubmit={runTransaction}>
             <div className="panelLabel">01 / TRANSACTION SET</div>
@@ -762,6 +772,8 @@ export default function Home() {
             )}
           </section>
         </section>
+      ) : (
+        <HistoryWorkspace />
       )}
     </main>
   );

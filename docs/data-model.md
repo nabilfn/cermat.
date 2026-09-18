@@ -1,35 +1,37 @@
-# Phase 3 data model
+# Data model — Phase 4
 
 ## documents
-
-Stores source-document metadata and the latest extraction.
 
 - id
 - filename
 - document_type
-- mime_type
-- size_bytes
+- MIME type / size
 - status
-- storage_path
-- extraction_model
-- extraction_data (JSON)
-- created_at
-- updated_at
+- storage path
+- extraction model
+- extraction JSON
+- created / updated timestamps
 
 ## transaction_sets
-
-Represents one operational purchase review.
 
 - id
 - name
 - status
-- last_reconciliation (JSON)
-- created_at
-- updated_at
+- last reconciliation JSON
+- created / updated timestamps
+
+Transaction status may be:
+
+- collecting
+- ready
+- matched
+- review_required
+- insufficient_data
+- resolved
 
 ## transaction_documents
 
-Links source documents into a transaction set.
+Links one transaction to at most one document of each supported type.
 
 - id
 - transaction_id
@@ -37,31 +39,27 @@ Links source documents into a transaction set.
 - document_type
 - created_at
 
-Current Phase 3 rule: a transaction set can contain at most one document of each type.
+## review_issues
 
-## extraction_data JSON
+Persists the human-review state for deterministic reconciliation exceptions.
 
-Contains:
+- id
+- transaction_id
+- issue_key
+- code
+- title
+- severity
+- status (`open` / `resolved`)
+- resolution_note
+- payload (full evidence-backed reconciliation issue)
+- active
+- resolved_at
+- created / updated timestamps
 
-- supplier name / registration number
-- document number / date
-- currency
-- subtotal / tax / total
-- line items
-- field-level source evidence
-- confidence
-- review reasons
+`(transaction_id, issue_key)` is unique.
 
-## last_reconciliation JSON
+### Active vs resolved
 
-Contains:
+`status` represents the human decision. `active` represents whether the exception still exists in the latest reconciliation.
 
-- status
-- document snapshots
-- summary counts
-- matched lines
-- deterministic issues
-- source evidence references
-- generation timestamp
-
-A later normalized analytics layer can split line items, evidence and issues into dedicated tables when query/reporting requirements justify it.
+This distinction lets cermat. preserve historical review decisions without showing stale exceptions in the current queue.

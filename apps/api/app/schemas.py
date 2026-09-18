@@ -75,10 +75,20 @@ class TransactionCreate(BaseModel):
     name: str | None = Field(default=None, max_length=120)
 
 
+TransactionStatus = Literal[
+    "collecting",
+    "ready",
+    "matched",
+    "review_required",
+    "insufficient_data",
+    "resolved",
+]
+
+
 class TransactionRecord(BaseModel):
     id: UUID
     name: str
-    status: Literal["collecting", "ready", "matched", "review_required", "insufficient_data"]
+    status: TransactionStatus
     created_at: datetime
     updated_at: datetime
 
@@ -95,8 +105,27 @@ class TransactionDocumentSummary(BaseModel):
     overall_confidence: float | None
 
 
+class ReviewSummary(BaseModel):
+    issue_count: int = 0
+    open_issue_count: int = 0
+    resolved_issue_count: int = 0
+    high_count: int = 0
+
+
 class TransactionDetail(TransactionRecord):
     documents: list[TransactionDocumentSummary]
+    review: ReviewSummary = Field(default_factory=ReviewSummary)
+
+
+class TransactionHistoryRecord(TransactionRecord):
+    document_count: int
+    issue_count: int
+    open_issue_count: int
+    resolved_issue_count: int
+    high_count: int
+    supplier_name: str | None = None
+    currency: str | None = None
+    total: float | None = None
 
 
 class EvidenceReference(BaseModel):
@@ -150,3 +179,20 @@ class ReconciliationResult(BaseModel):
     lines: list[MatchedLine]
     issues: list[ReconciliationIssue]
     generated_at: datetime
+
+
+class ReviewIssueRecord(ReconciliationIssue):
+    id: UUID
+    transaction_id: UUID
+    issue_key: str
+    status: Literal["open", "resolved"]
+    resolution_note: str | None = None
+    active: bool
+    resolved_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReviewIssueUpdate(BaseModel):
+    status: Literal["open", "resolved"]
+    resolution_note: str | None = Field(default=None, max_length=1000)

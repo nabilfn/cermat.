@@ -1,48 +1,54 @@
-# cermat. architecture — Phase 3
+# Architecture — Phase 4
 
 ```text
 Browser
   |
   v
 Next.js workspace
-  |
-  v
+  |-- Single document
+  |-- Three-way match
+  `-- Review history
+          |
+          v
 FastAPI
+  |\
+  | \--> Extraction service
+  |       - PDF/image input
+  |       - multimodal model
+  |       - typed structured output
   |
-  +---------------------> PostgreSQL
-  |                         - documents
-  |                         - extraction JSON
-  |                         - transaction sets
-  |                         - reconciliation result
+  +----> Reconciliation engine
+  |       - SKU-first matching
+  |       - description fallback
+  |       - quantity/price/arithmetic rules
   |
-  +--> Upload storage volume
+  +----> Review workflow
+  |       - stable issue identity
+  |       - open/resolved state
+  |       - resolution notes
+  |       - rerun preservation
   |
-  +--> AI extraction service
-  |      - PDF/image input
-  |      - multimodal model
-  |      - typed Pydantic output
-  |      - evidence snippets
-  |
-  +--> Deterministic reconciliation engine
-         - SKU matching
-         - description fallback
-         - quantity comparison
-         - unit-price comparison
-         - line arithmetic check
-         - source evidence mapping
+  `----> PostgreSQL / pgvector
+          - documents
+          - transaction_sets
+          - transaction_documents
+          - review_issues
 ```
 
-## Trust boundary
+## Responsibility boundary
 
-Uploaded files are untrusted input. Instructions printed inside a document do not become model instructions.
+### AI extraction
 
-The extraction model may identify values, but it does not repair or reconcile them. Reconciliation operates on the extracted structured values and produces explicit exceptions without modifying the source data.
+Reads messy documents and returns structured observations plus evidence.
 
-## Item matching order
+### Deterministic reconciliation
 
-1. exact normalized SKU match
-2. unused line with the strongest normalized description match
-3. description match must reach the configured similarity threshold
-4. otherwise the line remains unmatched and is surfaced for review
+Compares numerical and categorical values. The model does not decide whether `RM42 != RM44`.
 
-This makes identifier-based matching dominant while still supporting invoices and delivery notes that omit SKUs.
+### Human review
+
+Stores whether an exception has been accepted/resolved and why. Human review state is separate from the raw reconciliation result.
+
+## Stable issue identity
+
+A SHA-256 key is derived from the discrepancy's code, item, expected/actual values, and source field paths. Document UUIDs are deliberately excluded so the same logical issue remains recognisable across a rerun with re-created source records.

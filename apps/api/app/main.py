@@ -14,20 +14,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session, init_db
-from app.models import DocumentModel, TransactionDocumentModel, TransactionSetModel
+from app.models import (
+    DocumentModel,
+    ReviewIssueModel,
+    TransactionDocumentModel,
+    TransactionSetModel,
+)
 from app.schemas import (
     AIExtraction,
     DocumentRecord,
     DocumentType,
     ExtractionResult,
+    ReconciliationIssue,
     ReconciliationResult,
+    ReviewIssueRecord,
+    ReviewIssueUpdate,
+    ReviewSummary,
     TransactionCreate,
     TransactionDetail,
     TransactionDocumentSummary,
+    TransactionHistoryRecord,
     TransactionRecord,
 )
 from app.services.extraction import extract_document as run_ai_extraction
 from app.services.reconciliation import ReconciliationDocument, reconcile_three_way
+from app.services.review import make_issue_key
 
 ALLOWED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
 ALLOWED_MIME_TYPES = {
@@ -51,8 +62,11 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="cermat. API",
-    version="0.3.0",
-    description="Evidence-backed document intelligence and deterministic three-way matching.",
+    version="0.4.0",
+    description=(
+        "Evidence-backed document intelligence, deterministic three-way matching, "
+        "and a persistent human review workflow."
+    ),
     lifespan=lifespan,
 )
 
@@ -102,6 +116,23 @@ def _transaction_record(transaction: TransactionSetModel) -> TransactionRecord:
     )
 
 
+def _review_issue_record(issue: ReviewIssueModel) -> ReviewIssueRecord:
+    payload = ReconciliationIssue.model_validate(issue.payload)
+    return ReviewIssueRecord(
+        id=issue.id,
+        transaction_id=issue.transaction_id,
+        issue_key=issue.issue_key,
+        status=issue.status,
+        resolution_note=issue.resolution_note,
+        active=issue.active,
+        resolved_at=issue.resolved_at,
+        created_at=issue.created_at,
+        updated_at=issue.updated_at,
+        **payload.model_dump(),
+    )
+
+
+
 async def _get_transaction_documents(
     session: AsyncSession, transaction_id: UUID
 ) -> list[DocumentModel]:
@@ -123,6 +154,65 @@ async def _get_transaction_documents(
     return sorted(documents, key=lambda item: order.get(item.document_type, 99))
 
 
+async def _get_review_issues(
+    session: AsyncSession,
+    transaction_id: UUID,
+    *,
+    active_only: bool = True,
+) -> list[ReviewIssueModel]:
+    query = select(ReviewIssueModel).where(
+        ReviewIssueModel.transaction_id == transaction_id
+    )
+    if active_only:
+        query = query.where(ReviewIssueModel.active.is_(True))
+    query = query.order_by(ReviewIssueModel.created_at.asc())
+    result = await session.execute(query)
+    issues = list(result.scalars().all())
+    status_rank = {"open": 0, "resolved": 1}
+    severity_rank = {"high": 0, "medium": 1, "low": 2}
+    return sorted(
+        issues,
+        key=lambda issue: (
+            status_rank.get(issue.status, 9),
+            severity_rank.get(issue.severity, 9),
+            issue.created_at,
+        ),
+    )
+
+
+async def _review_summary(
+    session: AsyncSession, transaction_id: UUID
+) -> ReviewSummary:
+    issues = await _get_review_issues(session, transaction_id)
+    return ReviewSummary(
+        issue_count=len(issues),
+        open_issue_count=sum(issue.status == "open" for issue in issues),
+        resolved_issue_count=sum(issue.status == "resolved" for issue in issues),
+        high_count=sum(issue.severity == "high" for issue in issues),
+    )
+
+
+async def _refresh_transaction_status(
+    session: AsyncSession, transaction: TransactionSetModel
+) -> None:
+    issues = await _get_review_issues(session, transaction.id)
+    if issues:
+        transaction.status = (
+            "review_required"
+            if any(issue.status == "open" for issue in issues)
+            else "resolved"
+        )
+    elif transaction.last_reconciliation:
+        reconciliation = ReconciliationResult.model_validate(
+            transaction.last_reconciliation
+        )
+        transaction.status = (
+            "matched"
+            if reconciliation.status == "matched"
+            else reconciliation.status
+        )
+
+
 async def _transaction_detail(
     session: AsyncSession, transaction: TransactionSetModel
 ) -> TransactionDetail:
@@ -130,7 +220,78 @@ async def _transaction_detail(
     return TransactionDetail(
         **_transaction_record(transaction).model_dump(),
         documents=[_document_summary(document) for document in documents],
+        review=await _review_summary(session, transaction.id),
     )
+
+
+async def _history_record(
+    session: AsyncSession, transaction: TransactionSetModel
+) -> TransactionHistoryRecord:
+    documents = await _get_transaction_documents(session, transaction.id)
+    review = await _review_summary(session, transaction.id)
+    preferred = next(
+        (
+            document
+            for document in documents
+            if document.document_type == DocumentType.invoice.value
+        ),
+        documents[0] if documents else None,
+    )
+    extraction = preferred.extraction_data if preferred and preferred.extraction_data else {}
+    return TransactionHistoryRecord(
+        **_transaction_record(transaction).model_dump(),
+        document_count=len(documents),
+        issue_count=review.issue_count,
+        open_issue_count=review.open_issue_count,
+        resolved_issue_count=review.resolved_issue_count,
+        high_count=review.high_count,
+        supplier_name=extraction.get("supplier_name"),
+        currency=extraction.get("currency"),
+        total=extraction.get("total"),
+    )
+
+
+async def _sync_review_issues(
+    session: AsyncSession,
+    transaction: TransactionSetModel,
+    reconciliation: ReconciliationResult,
+) -> list[ReviewIssueModel]:
+    existing_result = await session.execute(
+        select(ReviewIssueModel).where(
+            ReviewIssueModel.transaction_id == transaction.id
+        )
+    )
+    existing = list(existing_result.scalars().all())
+    by_key = {issue.issue_key: issue for issue in existing}
+
+    for stored in existing:
+        stored.active = False
+
+    for issue in reconciliation.issues:
+        key = make_issue_key(issue)
+        stored = by_key.get(key)
+        if stored is None:
+            stored = ReviewIssueModel(
+                transaction_id=transaction.id,
+                issue_key=key,
+                code=issue.code,
+                title=issue.title,
+                severity=issue.severity,
+                status="open",
+                payload=issue.model_dump(mode="json"),
+                active=True,
+            )
+            session.add(stored)
+            by_key[key] = stored
+        else:
+            stored.code = issue.code
+            stored.title = issue.title
+            stored.severity = issue.severity
+            stored.payload = issue.model_dump(mode="json")
+            stored.active = True
+
+    await session.flush()
+    return await _get_review_issues(session, transaction.id)
 
 
 @app.get("/health")
@@ -138,10 +299,11 @@ async def health() -> dict[str, str | bool]:
     return {
         "status": "ok",
         "service": "cermat-api",
-        "phase": "3",
+        "phase": "4",
         "model": settings.openai_model,
         "ai_configured": bool(settings.openai_api_key),
         "database": "postgresql",
+        "review_workflow": True,
     }
 
 
@@ -264,14 +426,17 @@ async def create_transaction(
     return _transaction_record(transaction)
 
 
-@app.get("/api/v1/transactions", response_model=list[TransactionRecord])
+@app.get("/api/v1/transactions", response_model=list[TransactionHistoryRecord])
 async def list_transactions(
     session: AsyncSession = Depends(get_session),
-) -> list[TransactionRecord]:
+) -> list[TransactionHistoryRecord]:
     result = await session.execute(
-        select(TransactionSetModel).order_by(TransactionSetModel.created_at.desc())
+        select(TransactionSetModel).order_by(TransactionSetModel.updated_at.desc())
     )
-    return [_transaction_record(item) for item in result.scalars().all()]
+    records: list[TransactionHistoryRecord] = []
+    for transaction in result.scalars().all():
+        records.append(await _history_record(session, transaction))
+    return records
 
 
 @app.get("/api/v1/transactions/{transaction_id}", response_model=TransactionDetail)
@@ -330,7 +495,9 @@ async def attach_document(
 
     documents = await _get_transaction_documents(session, transaction_id)
     types = {item.document_type for item in documents}
-    transaction.status = "ready" if REQUIRED_THREE_WAY_TYPES.issubset(types) else "collecting"
+    transaction.status = (
+        "ready" if REQUIRED_THREE_WAY_TYPES.issubset(types) else "collecting"
+    )
     await session.commit()
     await session.refresh(transaction)
     return await _transaction_detail(session, transaction)
@@ -385,8 +552,9 @@ async def reconcile_transaction(
         documents=summaries,
     )
 
-    transaction.status = result.status
     transaction.last_reconciliation = result.model_dump(mode="json")
+    await _sync_review_issues(session, transaction, result)
+    await _refresh_transaction_status(session, transaction)
     await session.commit()
     return result
 
@@ -405,3 +573,49 @@ async def get_last_reconciliation(
     if not transaction.last_reconciliation:
         raise HTTPException(status_code=404, detail="No reconciliation has been run yet.")
     return ReconciliationResult.model_validate(transaction.last_reconciliation)
+
+
+@app.get(
+    "/api/v1/transactions/{transaction_id}/issues",
+    response_model=list[ReviewIssueRecord],
+)
+async def list_review_issues(
+    transaction_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> list[ReviewIssueRecord]:
+    transaction = await session.get(TransactionSetModel, transaction_id)
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+    issues = await _get_review_issues(session, transaction_id)
+    return [_review_issue_record(issue) for issue in issues]
+
+
+@app.patch(
+    "/api/v1/transactions/{transaction_id}/issues/{issue_id}",
+    response_model=ReviewIssueRecord,
+)
+async def update_review_issue(
+    transaction_id: UUID,
+    issue_id: UUID,
+    payload: ReviewIssueUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> ReviewIssueRecord:
+    transaction = await session.get(TransactionSetModel, transaction_id)
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found.")
+
+    issue = await session.get(ReviewIssueModel, issue_id)
+    if not issue or issue.transaction_id != transaction_id or not issue.active:
+        raise HTTPException(status_code=404, detail="Review issue not found.")
+
+    issue.status = payload.status
+    note = (payload.resolution_note or "").strip()
+    issue.resolution_note = note or None
+    issue.resolved_at = (
+        datetime.now(timezone.utc) if payload.status == "resolved" else None
+    )
+
+    await _refresh_transaction_status(session, transaction)
+    await session.commit()
+    await session.refresh(issue)
+    return _review_issue_record(issue)
