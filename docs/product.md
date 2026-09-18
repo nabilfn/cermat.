@@ -22,6 +22,7 @@ An SME operations or finance staff member who currently checks purchase orders, 
 6. Human resolution/reopen
 7. Searchable transaction history
 8. Ask cermat.: evidence-grounded questions over all of the above
+9. Intelligence & Operations: overview, priority queue, supplier intelligence, patterns, anomalies, attention queue
 
 ## Workflow states
 
@@ -50,3 +51,21 @@ A business-data assistant, not a general chatbot. It answers operational questio
 - **Read-only**: it cannot resolve, edit or delete. Those stay explicit, human UI actions.
 - **Honest about gaps**: unsupported questions, unknown transactions or suppliers, and empty results are stated plainly rather than filled in.
 - **Report, not chat**: answers are a headline plus short supporting lines, then the exceptions and transactions behind them.
+
+
+## Intelligence & Operations
+
+cermat. moves from "here is a discrepancy" to "here is what is happening across your operations, why it matters, and where to look first".
+
+> **Rules calculate. Data proves. AI explains. Humans decide.**
+
+- **Overview first.** The landing page answers: what needs attention, what changed, which suppliers repeat exceptions, and whether things are improving or worsening.
+- **Deterministic facts.** Counts, rankings, variance totals, rates, trends and thresholds are calculated in code. AI only words the brief, and that wording is checked against the numbers.
+- **Explainable prioritisation.** Every priority score lists the points behind it. "Critical" requires a stated rule, not a feeling.
+- **Patterns are earned.** One-off exceptions are never called a pattern. A pattern needs repeats across transactions within a window.
+- **Anomalies show their working.** Observed value, baseline, threshold and reason — never "AI detected suspicious activity".
+- **Neutral language.** No accusations or speculation about motives. No words like fraud or suspicious.
+- **Honest emptiness.** New workspaces get onboarding. Thin history says "not enough history" instead of drawing a trend.
+- **Workflow health, not people tracking.** Resolution metrics describe the review queue, not individuals.
+- **Quiet notifications.** An in-app `ATTENTION n` queue. Each condition notifies once.
+- **Not a BI dashboard.** Rows, thin rules and a small number of restrained charts. No gauges, donuts or KPI card walls.

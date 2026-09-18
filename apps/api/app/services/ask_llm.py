@@ -18,7 +18,11 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from app.config import settings
-from app.prompts.ask_cermat import ANSWER_SYSTEM_PROMPT, PLANNER_SYSTEM_PROMPT
+from app.prompts.ask_cermat import (
+    ANSWER_SYSTEM_PROMPT,
+    BRIEF_SYSTEM_PROMPT,
+    PLANNER_SYSTEM_PROMPT,
+)
 from app.schemas import AskIntent, IssueFamily, QuantityDirection, Severity
 
 
@@ -31,6 +35,7 @@ class PlannerOutput(BaseModel):
     issue_type: IssueFamily | None
     quantity_direction: QuantityDirection | None
     search: str | None
+    period: Literal["7d", "30d", "90d", "all"] | None
     limit: int | None
 
 
@@ -44,10 +49,18 @@ class ComposedAnswer(BaseModel):
     points: list[ComposedPoint]
 
 
+class ComposedBrief(BaseModel):
+    lines: list[str]
+
+
 class AskModel(Protocol):
     def plan(self, question: str, conversation: dict[str, Any]) -> PlannerOutput: ...
 
     def compose(self, context: dict[str, Any]) -> ComposedAnswer: ...
+
+
+class BriefModel(Protocol):
+    def brief(self, facts: dict[str, Any]) -> ComposedBrief: ...
 
 
 class OpenAIAskModel:
@@ -87,6 +100,20 @@ class OpenAIAskModel:
         )
         if response.output_parsed is None:
             raise RuntimeError("Answer model returned no structured output.")
+        return response.output_parsed
+
+    def brief(self, facts: dict[str, Any]) -> ComposedBrief:
+        payload = json.dumps(facts, ensure_ascii=False, default=str)
+        response = self._client.responses.parse(
+            model=self._model,
+            input=[
+                {"role": "system", "content": BRIEF_SYSTEM_PROMPT},
+                {"role": "user", "content": "Operational facts (JSON):\n" + payload},
+            ],
+            text_format=ComposedBrief,
+        )
+        if response.output_parsed is None:
+            raise RuntimeError("Brief model returned no structured output.")
         return response.output_parsed
 
 

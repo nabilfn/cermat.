@@ -108,7 +108,7 @@ type AskResponse = {
     open_issue_count: number;
     resolved_issue_count: number;
   };
-  result_kind: "issues" | "transactions" | "suppliers" | "none";
+  result_kind: "issues" | "transactions" | "suppliers" | "insights" | "none";
   issues: AskIssueRow[];
   transactions: AskTransactionRow[];
   suppliers: AskSupplierRow[];
@@ -249,6 +249,8 @@ type AskWorkspaceProps = {
   onClearScope: () => void;
   onScope: (scope: { id: string; name: string }) => void;
   onOpenTransaction: (id: string) => void;
+  /** A question asked from elsewhere (Overview, supplier view). Runs once per nonce. */
+  request?: { text: string; nonce: number } | null;
 };
 
 export default function AskWorkspace({
@@ -256,6 +258,7 @@ export default function AskWorkspace({
   onClearScope,
   onScope,
   onOpenTransaction,
+  request = null,
 }: AskWorkspaceProps) {
   const [question, setQuestion] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -290,6 +293,16 @@ export default function AskWorkspace({
         ])
       );
   }, [scopeId]);
+
+  const handledRequest = useRef<number | null>(null);
+  useEffect(() => {
+    if (!request || handledRequest.current === request.nonce || scopeId) return;
+    handledRequest.current = request.nonce;
+    setQuestion(request.text);
+    void ask(request.text);
+    // `ask` reads the latest state; re-running on its identity would repeat the question.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request, scopeId]);
 
   const active = useMemo(
     () => turns.find((turn) => turn.id === activeTurnId) ?? turns[0] ?? null,
@@ -546,7 +559,8 @@ export default function AskWorkspace({
               </ul>
             )}
 
-            {response.result_kind === "issues" && response.issues.length > 0 && (
+            {(response.result_kind === "issues" || response.result_kind === "insights") &&
+              response.issues.length > 0 && (
               <section className="askResults">
                 <div className="sectionTitleRow">
                   <span>Exceptions</span>

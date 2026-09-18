@@ -1,4 +1,4 @@
-# Data model — Phase 5
+# Data model — Phase 6
 
 ## documents
 
@@ -86,3 +86,40 @@ Ask cermat. reads existing records only. It adds no tables and never writes.
 ### Conversation context
 
 `AskConversationContext` is returned with every answer and sent back with the next question. It holds only the previous question, the previous intent, and up to 12 entities (`transaction` by ID, `supplier` by name). It is a hint, never a fact: IDs are re-resolved against the database on every request.
+
+## intelligence_settings (Phase 6)
+
+One row (`id = 1`) holding validated operational thresholds as JSON (`config`), plus `updated_at`. A missing or invalid row means defaults.
+
+| Setting | Default |
+| --- | --- |
+| high_value_variance_amount | 500 (applied per currency, never converted) |
+| high_variance_percentage | 10 |
+| recurring_issue_min_count | 3 |
+| recurring_issue_period_days | 90 |
+| overdue_review_days | 7 |
+| low_confidence_threshold | 0.75 |
+| amount_median_multiplier | 3 |
+| min_history_for_baseline | 4 |
+| issue_spike_ratio | 2 |
+| critical_score / high_score | 85 / 55 |
+| priority_weights | see architecture.md |
+
+## attention_events (Phase 6)
+
+- id
+- event_key (unique, stable — e.g. `high_severity_issue:<issue id>`, `recurring_pattern:<pattern key>`)
+- event_type: `high_severity_issue` · `large_variance` · `overdue_review` · `recurring_pattern` · `anomaly`
+- title, message, severity
+- entity_type (`transaction` / `supplier` / `workspace`), entity_id, entity_label
+- transaction_id (nullable, cascades on delete)
+- created_at, seen_at, dismissed_at
+- cleared_at — set when the condition no longer holds; cleared again → restored, not duplicated
+
+## Derived, not stored
+
+Every Overview metric, priority score, pattern, anomaly, trend point and supplier statistic is computed on request from `transaction_sets`, `documents` and **active** `review_issues`. Nothing is materialised.
+
+- **Supplier identity**: suppliers exist only as extracted names. The key is the name normalised for case, punctuation and company suffixes (`Sdn. Bhd.`, `Ltd` …), e.g. `abc-supplies`. There is no fuzzy merging: "Delta Office" and "Delta Offices Trading" stay separate. A transaction belongs to the supplier on its purchase order.
+- **Issue rate**: reconciled transactions with ≥ 1 active exception ÷ reconciled transactions.
+- **Resolution time**: `resolved_at − created_at`. Reopening clears `resolved_at`, so the trend's "open at end of period" reflects current review state rather than a full audit history.

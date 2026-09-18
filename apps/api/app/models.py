@@ -118,3 +118,46 @@ class ReviewIssueModel(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class IntelligenceSettingsModel(Base):
+    """Single-row operational thresholds (id = 1). Absent row means defaults."""
+
+    __tablename__ = "intelligence_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    config: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AttentionEventModel(Base):
+    """In-app attention queue. ``event_key`` is stable, so a condition notifies once."""
+
+    __tablename__ = "attention_events"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    event_key: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    event_type: Mapped[str] = mapped_column(String(40), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    message: Mapped[str] = mapped_column(String(600))
+    severity: Mapped[str] = mapped_column(String(16))
+    entity_type: Mapped[str] = mapped_column(String(20))
+    entity_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    entity_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    transaction_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("transaction_sets.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+    seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set when the underlying condition no longer holds (e.g. issue resolved).
+    cleared_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -2,6 +2,43 @@
 
 **cermat.** is an AI operations agent for SMEs that reads business documents, turns them into structured records, reconciles related documents with deterministic rules, and routes discrepancies through a human review workflow.
 
+## Phase 6 — Intelligence & Operations
+
+> cermat. computes operational facts deterministically and uses AI to explain them.
+> **Rules calculate. Data proves. AI explains. Humans decide.**
+
+cermat. now opens on an **Overview** that answers: what needs attention, what changed, which suppliers keep causing exceptions, and whether things are improving.
+
+```text
+Review issues ─► Operational metrics ─┬─► Rule-based signals (priority, anomalies)
+                                      └─► Pattern analysis (recurring issues)
+                                                  │
+                                                  ▼
+                                   Intelligence layer ─► Overview · Supplier view
+                                                  │      Attention queue · Ask cermat.
+                                                  ▼
+                                     cermat. brief (AI wording, grounded + checked)
+```
+
+- **Needs attention** — open exceptions, high severity, affected transactions, active billed variance per currency (never converted), overdue reviews.
+- **Priority queue** — a transparent points score (severity, billed variance, age, overdue, related issues, recurring supplier, issue type). Every point is listed as a reason. `critical` needs a clear rule: high severity **and** a high-value variance or an overdue review.
+- **Trend** — exceptions created/resolved per day or week, compared with the previous period. Not shown until there is enough history.
+- **Supplier intelligence** — volume, issue rate, current signals, variance, recurring patterns and anomalies per supplier.
+- **Recurring patterns** — the same kind of exception ≥ 3 times in 90 days across ≥ 2 transactions (configurable).
+- **Anomaly signals** — explainable rules, each reporting observed value, baseline and threshold.
+- **Attention queue** — `ATTENTION n` in the top bar. Events are keyed, so each condition notifies once.
+- **Data quality** — extraction gaps (low confidence, missing date/number/currency/evidence), kept separate from reconciliation exceptions.
+- **Thresholds** — editable from the Overview, stored in PostgreSQL.
+- **Ask cermat.** — new intents: "What changed in the last 30 days?", "Are price discrepancies increasing?", "Which recurring patterns should I review?", "Why is ABC Supplies appearing in the priority queue?"
+
+### Demo data
+
+```bash
+docker compose exec api python -m scripts.seed_demo
+```
+
+Opt-in only. Seeds ~23 backdated transactions across five suppliers and three currencies: clean matches, price and quantity discrepancies, a supplier mismatch, a currency mismatch, resolved and overdue issues, recurring supplier and item patterns, an 18.2% price anomaly, an unusually large invoice, a new supplier with a high-severity exception, missing invoices and a low-confidence extraction. Safe to run twice.
+
 ## Phase 5 — Ask cermat.
 
 Ask cermat. is a read-only, evidence-grounded question layer over the records cermat. already stores. Ask things like:
@@ -103,6 +140,10 @@ Open:
 
 ## Workspace modes
 
+### Overview
+
+The landing page. Current exceptions, priority queue, cermat. brief, supplier signals, trend, issue mix, recurring patterns, anomaly signals, review workflow health and data quality, over 7 / 30 / 90 days or all time. An empty workspace shows onboarding, never sample figures.
+
 ### Single document
 
 Extract one PO, DO, invoice, or receipt and inspect structured fields, line items, confidence, and source evidence.
@@ -140,7 +181,9 @@ Each reconciliation exception gets a stable hash based on the business meaning o
 docker compose exec api python -m unittest discover -s tests -v
 ```
 
-The test suite covers clean matching, quantity/price mismatches, stable review-issue identity, and Ask cermat.: every query intent, transaction and supplier scoping, unsupported and no-result questions, follow-ups, grounding checks on model output, and the read-only guarantees. Ask tests use an in-memory snapshot and a fake model, so they need no database or API key.
+The Phase 6 suite (`test_intelligence.py`) covers overview counts, period boundaries, priority scoring, billed variance, multi-currency totals, supplier aggregation and issue rate, pattern and anomaly thresholds, resolution times, attention de-duplication, trends and the empty workspace. `test_intelligence_db.py` runs the SQL loaders and attention sync against a separate `cermat_test` database on the same PostgreSQL server (skipped if unreachable).
+
+The test suite also covers clean matching, quantity/price mismatches, stable review-issue identity, and Ask cermat.: every query intent, transaction and supplier scoping, unsupported and no-result questions, follow-ups, grounding checks on model output, and the read-only guarantees. Ask tests use an in-memory snapshot and a fake model, so they need no database or API key.
 
 ## Important architecture boundary
 

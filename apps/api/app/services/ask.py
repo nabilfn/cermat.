@@ -9,12 +9,11 @@ Retrieve facts deterministically. Let AI explain them clearly.
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from collections import Counter
 from collections.abc import AsyncIterator
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from fastapi.concurrency import run_in_threadpool
@@ -34,6 +33,10 @@ from app.schemas import (
     AskSupplierRow,
     AskTransactionRow,
 )
+from app.intelligence.config import load_settings
+from app.intelligence.dataset import utcnow
+from app.services.ask_intelligence import INTELLIGENCE_INTENTS, run_intelligence_query
+from app.services.grounding import ungrounded
 from app.services.ask_context import BuiltResult, build_rows, grounded_context
 from app.services.ask_llm import AskModel, ComposedAnswer, PlannerOutput
 from app.services.ask_planner import ResolvedPlan, heuristic_plan, resolve_plan
@@ -413,6 +416,17 @@ def compose_from_records(
     return _tidy(AskAnswer(headline=headline, points=points))
 
 
+def insight_answer(result: QueryResult, built: BuiltResult) -> AskAnswer:
+    """Findings were written in code by the intelligence layer; attach evidence."""
+    by_issue = {str(row.issue_id): row.source_ids for row in built.issues}
+    points: list[AskAnswerPoint] = []
+    for text, issue_ids in result.insight_lines[1:MAX_POINTS + 1]:
+        cited = [sid for issue_id in issue_ids for sid in by_issue.get(str(issue_id), [])]
+        points.append(AskAnswerPoint(text=text, source_ids=list(dict.fromkeys(cited))[:6]))
+    headline = result.insight_lines[0][0] if result.insight_lines else "No findings."
+    return _tidy(AskAnswer(headline=headline, points=points))
+
+
 def no_results_answer(resolved: ResolvedPlan, scope_name: str | None) -> AskAnswer:
     where = f" in {scope_name}" if scope_name else " in this workspace"
     noun = _issue_noun(resolved)
@@ -432,28 +446,9 @@ def no_results_answer(resolved: ResolvedPlan, scope_name: str | None) -> AskAnsw
 # Grounding guard for model output
 # ---------------------------------------------------------------------------
 
-_NUMBER = re.compile(r"(?<![A-Za-z])[+\-−]?\d[\d,]*(?:\.\d+)?")
-
-
-def _numbers(text: str) -> set[Decimal]:
-    found: set[Decimal] = set()
-    for token in _NUMBER.findall(text):
-        cleaned = token.replace(",", "").replace("−", "-").lstrip("+-")
-        try:
-            found.add(Decimal(cleaned).normalize())
-        except InvalidOperation:
-            continue
-    return found
-
-
 def ungrounded_numbers(answer: ComposedAnswer, context: dict[str, Any]) -> set[Decimal]:
     """Numbers in the model's answer that do not exist in the grounded context."""
-    allowed = _numbers(json.dumps(context, ensure_ascii=False, default=str))
-    allowed.update({Decimal(0), Decimal(1)})
-    written = _numbers(answer.headline)
-    for point in answer.points:
-        written |= _numbers(point.text)
-    return {value for value in written if value not in allowed}
+    return ungrounded([answer.headline, *(point.text for point in answer.points)], context)
 
 
 def accept_model_answer(
@@ -478,6 +473,15 @@ def accept_model_answer(
 # ---------------------------------------------------------------------------
 
 
+INSIGHT_FOLLOW_UPS = [
+    ("What changed in the last 30 days?", AskIntent.overview_summary),
+    ("Show the priority queue.", AskIntent.priority_queue),
+    ("Which recurring patterns should I review?", AskIntent.recurring_patterns),
+    ("Are price discrepancies increasing?", AskIntent.exception_trend),
+    ("Are there any anomaly signals?", AskIntent.anomaly_signals),
+]
+
+
 def follow_ups(
     resolved: ResolvedPlan,
     result: QueryResult,
@@ -486,6 +490,13 @@ def follow_ups(
 ) -> list[str]:
     suggestions: list[str] = []
     intent = resolved.plan.intent
+    if result.result_kind == "insights":
+        if built.issues and not scoped:
+            suggestions.append(f"Why is {built.issues[0].transaction_name} flagged?")
+        for text, source_intent in INSIGHT_FOLLOW_UPS:
+            if source_intent != intent and len(suggestions) < 3:
+                suggestions.append(text)
+        return suggestions[:3]
     if resolved.focus is not None:
         supplier = resolved.focus.supplier
         if not scoped and supplier:
@@ -631,6 +642,7 @@ async def run_ask(
         if request.transaction_id is not None and scope is None:
             raise AskError(404, "Transaction not found.")
         scope_name = scope.name if scope else None
+        thresholds, _ = await load_settings(session)
 
         raw_plan, used_model = await _plan(question, snapshot, scope, request.context, model)
         notices: list[str] = []
@@ -648,7 +660,10 @@ async def run_ask(
         notices.extend(resolved.notices)
 
         yield {"stage": "searching"}
-        result = run_query(snapshot, resolved.plan)
+        if resolved.plan.intent in INTELLIGENCE_INTENTS and resolved.outcome == "ok":
+            result = run_intelligence_query(snapshot, resolved.plan, thresholds, utcnow())
+        else:
+            result = run_query(snapshot, resolved.plan)
         built = build_rows(result)
 
         answer_mode = "records"
@@ -672,7 +687,11 @@ async def run_ask(
             answer = no_results_answer(resolved, scope_name)
         else:
             outcome = "answered"
-            answer = compose_from_records(resolved, result, built, scope_name)
+            answer = (
+                insight_answer(result, built)
+                if result.result_kind == "insights"
+                else compose_from_records(resolved, result, built, scope_name)
+            )
             if model is not None:
                 yield {"stage": "composing"}
                 context = grounded_context(
@@ -700,7 +719,7 @@ async def run_ask(
                     answer_mode = "model"
 
         shown = built.shown(result.result_kind)
-        if outcome == "answered" and result.total_matches > shown:
+        if outcome == "answered" and result.result_kind != "insights" and result.total_matches > shown:
             notices.append(f"Showing {shown} of {result.total_matches} matching records.")
         if any(not s.snippet_available for s in built.registry.sources) or any(
             not row.source_ids for row in built.issues

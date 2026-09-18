@@ -519,13 +519,17 @@ def resolve_supplier(snapshot: WorkspaceSnapshot, wanted: str) -> str | None:
 
 @dataclass
 class QueryResult:
-    result_kind: str  # "issues" | "transactions" | "suppliers" | "none"
+    result_kind: str  # "issues" | "transactions" | "suppliers" | "insights" | "none"
     metrics: AskMetrics
     issues: list[tuple[TransactionSnap, IssueSnap]] = field(default_factory=list)
     transactions: list[TransactionSnap] = field(default_factory=list)
     suppliers: list[AskSupplierRow] = field(default_factory=list)
     focus: TransactionSnap | None = None
     total_matches: int = 0
+    # Phase 6 intelligence intents: computed facts and code-written findings,
+    # each finding paired with the issue IDs that support it.
+    facts: dict | None = None
+    insight_lines: list[tuple[str, list[UUID]]] = field(default_factory=list)
 
 
 def select_issues(

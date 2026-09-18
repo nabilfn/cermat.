@@ -199,7 +199,7 @@ def plan(intent: AskIntent, **filters) -> AskPlan:
 def planner(intent: AskIntent, **fields) -> PlannerOutput:
     base = dict(
         supplier=None, severity=None, status=None, transaction_ref=None,
-        issue_type=None, quantity_direction=None, search=None, limit=None,
+        issue_type=None, quantity_direction=None, search=None, period=None, limit=None,
     )
     return PlannerOutput(intent=intent, **{**base, **fields})
 
@@ -210,6 +210,9 @@ class FakeSession:
 
     async def rollback(self) -> None:
         self.rolled_back = True
+
+    async def get(self, *_args):
+        return None  # no stored thresholds → defaults
 
 
 class FakeModel:
@@ -351,7 +354,10 @@ class QueryHandlerTests(unittest.TestCase):
         self.assertEqual(result.total_matches, 0)
 
     def test_every_intent_maps_to_a_fixed_handler(self) -> None:
-        self.assertEqual(set(INTENT_HANDLERS), set(AskIntent))
+        from app.services.ask_intelligence import INTELLIGENCE_INTENTS
+
+        self.assertEqual(set(INTENT_HANDLERS) | INTELLIGENCE_INTENTS, set(AskIntent))
+        self.assertFalse(set(INTENT_HANDLERS) & INTELLIGENCE_INTENTS)
         for handler in INTENT_HANDLERS.values():
             self.assertTrue(callable(handler))
 
@@ -669,6 +675,8 @@ class SafetyTests(unittest.TestCase):
         "app/services/ask_llm.py",
         "app/routers/ask.py",
         "app/prompts/ask_cermat.py",
+        "app/services/ask_intelligence.py",
+        "app/services/grounding.py",
     ]
 
     def test_ask_modules_never_write_or_run_raw_sql(self) -> None:

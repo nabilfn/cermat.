@@ -37,6 +37,9 @@ from app.schemas import (
     TransactionRecord,
 )
 from app.routers.ask import router as ask_router
+from app.routers.attention import router as attention_router
+from app.routers.intelligence import router as intelligence_router
+from app.routers.intelligence_settings import router as intelligence_settings_router
 from app.services.extraction import extract_document as run_ai_extraction
 from app.services.reconciliation import ReconciliationDocument, reconcile_three_way
 from app.services.review import make_issue_key
@@ -63,11 +66,11 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="cermat. API",
-    version="0.5.0",
+    version="0.6.0",
     description=(
         "Evidence-backed document intelligence, deterministic three-way matching, "
-        "a persistent human review workflow, and Ask cermat. — read-only, "
-        "evidence-grounded questions over persisted records."
+        "a persistent human review workflow, Ask cermat. — read-only, "
+        "evidence-grounded questions over persisted records — and operations intelligence."
     ),
     lifespan=lifespan,
 )
@@ -81,6 +84,9 @@ app.add_middleware(
 )
 
 app.include_router(ask_router)
+app.include_router(intelligence_router)
+app.include_router(attention_router)
+app.include_router(intelligence_settings_router)
 
 
 def _document_record(document: DocumentModel) -> DocumentRecord:
@@ -303,12 +309,13 @@ async def health() -> dict[str, str | bool]:
     return {
         "status": "ok",
         "service": "cermat-api",
-        "phase": "5",
+        "phase": "6",
         "model": settings.openai_model,
         "ai_configured": bool(settings.openai_api_key),
         "database": "postgresql",
         "review_workflow": True,
         "ask": True,
+        "intelligence": True,
     }
 
 

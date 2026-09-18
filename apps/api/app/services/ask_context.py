@@ -226,7 +226,7 @@ def build_rows(result: QueryResult) -> BuiltResult:
     if result.focus is not None:
         focus_source_ids = registry.add_document_headers(result.focus)
         transactions = [transaction_row(result.focus)]
-    elif result.result_kind == "issues":
+    elif result.result_kind in {"issues", "insights"}:
         seen: dict[UUID, TransactionSnap] = {}
         for txn, _ in result.issues:
             seen.setdefault(txn.id, txn)
@@ -303,6 +303,10 @@ def grounded_context(
             "transactions_by_status": metrics.by_status,
         },
     }
+
+    if result.result_kind == "insights":
+        context["intelligence_facts_calculated_by_cermat"] = result.facts or {}
+        context["findings_written_from_those_facts"] = [text for text, _ in result.insight_lines]
 
     if result.focus is not None:
         focus = result.focus

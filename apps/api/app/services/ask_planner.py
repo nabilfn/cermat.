@@ -68,6 +68,22 @@ def _find_supplier(text: str, suppliers: list[str]) -> str | None:
     return None
 
 
+def _period_from(text: str) -> str | None:
+    match = re.search(r"(?:last|past)\s+(\d+)\s*days?", text)
+    if match:
+        days = int(match.group(1))
+        return "7d" if days <= 7 else "30d" if days <= 30 else "90d" if days <= 90 else "all"
+    if _has(text, r"(this|last|past) week"):
+        return "7d"
+    if _has(text, r"(this|last|past) month"):
+        return "30d"
+    if _has(text, r"(this|last|past) quarter"):
+        return "90d"
+    if _has(text, r"all time", r"\bever\b"):
+        return "all"
+    return None
+
+
 def heuristic_plan(
     question: str,
     *,
@@ -85,6 +101,7 @@ def heuristic_plan(
         issue_type=None,
         quantity_direction=None,
         search=None,
+        period=None,
         limit=None,
     )
 
@@ -121,6 +138,8 @@ def heuristic_plan(
         if len(transactions) == 1:
             reference = transactions[0].label
 
+    period = _period_from(text)
+
     explain = _has(
         text, r"\bwhy\b", r"flag", r"wrong", r"variance", r"explain", r"issue",
         r"problem", r"discrepanc", r"mismatch",
@@ -133,6 +152,24 @@ def heuristic_plan(
             transaction_ref=reference,
             status=status,
         )
+
+    # Phase 6 — intelligence intents.
+    if supplier and _has(text, r"priority", r"\bwhy\b", r"summar", r"profile", r"how is", r"performing", r"doing"):
+        return out(AskIntent.supplier_summary, supplier=supplier, period=period)
+    if _has(text, r"what changed", r"\bchanged\b", r"what happened", r"operations? (overview|summary)", r"\boverview\b"):
+        return out(AskIntent.overview_summary, period=period)
+    if _has(text, r"recurring", r"\bpatterns?\b", r"repeated", r"keeps? happening"):
+        return out(AskIntent.recurring_patterns, period=period)
+    if _has(text, r"anomal", r"unusual", r"outlier", r"\bsignals?\b", r"out of the ordinary"):
+        return out(AskIntent.anomaly_signals, period=period)
+    if _has(text, r"increasing", r"decreasing", r"\btrend", r"getting (worse|better)", r"improving", r"worsening", r"going (up|down)"):
+        return out(AskIntent.exception_trend, issue_type=_issue_type_from(text), period=period)
+    if _has(text, r"priority", r"prioriti", r"review first", r"look at first", r"most urgent"):
+        return out(AskIntent.priority_queue, period=period)
+    if _has(text, r"total variance", r"variance total", r"overall variance", r"financial", r"exposure", r"how much variance"):
+        return out(AskIntent.variance_summary, period=period)
+    if _has(text, r"resolution (time|rate|performance)", r"time to resolve", r"how (fast|quickly)", r"\boverdue\b", r"backlog"):
+        return out(AskIntent.resolution_performance, period=period)
 
     if _has(text, r"supplier", r"vendor") and _has(
         text, r"\bwhich\b", r"\bmost\b", r"\brank", r"\bcompare", r"\bworst\b", r"\btop\b"
@@ -237,6 +274,7 @@ def resolve_plan(
         issue_type=raw.issue_type,
         quantity_direction=raw.quantity_direction,
         search=(raw.search or "").strip()[:160] or None,
+        period=raw.period,
     )
 
     def done(**kwargs) -> ResolvedPlan:
@@ -290,6 +328,16 @@ def resolve_plan(
         else:
             focus = matches[0]
             filters.transaction_id = focus.id
+    elif intent == AskIntent.supplier_summary and filters.supplier is None:
+        supplier_entities = [e for e in (context.entities if context else []) if e.kind == "supplier"]
+        canonical = (
+            resolve_supplier(snapshot, supplier_entities[0].label)
+            if len(supplier_entities) == 1
+            else None
+        )
+        if canonical is None:
+            return done(outcome="not_found", message="Name the supplier you want summarised.")
+        filters.supplier = canonical
     elif intent in TRANSACTION_INTENTS:
         focus = _entity_transaction(snapshot, context, None)
         if focus is None:

@@ -2,7 +2,9 @@
 
 import { FormEvent, useState } from "react";
 import AskWorkspace, { AskScope } from "./components/AskWorkspace";
+import AttentionIndicator from "./components/AttentionIndicator";
 import HistoryWorkspace from "./components/HistoryWorkspace";
+import OverviewWorkspace from "./components/OverviewWorkspace";
 
 type DocumentType =
   | "purchase_order"
@@ -10,7 +12,7 @@ type DocumentType =
   | "invoice"
   | "receipt";
 
-type Mode = "document" | "transaction" | "history" | "ask";
+type Mode = "overview" | "document" | "transaction" | "history" | "ask";
 
 type ExtractionResult = {
   document_id: string;
@@ -154,9 +156,22 @@ async function responseJson<T>(response: Response): Promise<T> {
 }
 
 export default function Home() {
-  const [mode, setMode] = useState<Mode>("document");
+  const [mode, setMode] = useState<Mode>("overview");
   const [askScope, setAskScope] = useState<AskScope>(null);
   const [historyFocusId, setHistoryFocusId] = useState<string | null>(null);
+  const [supplierKey, setSupplierKey] = useState<string | null>(null);
+  const [askRequest, setAskRequest] = useState<{ text: string; nonce: number } | null>(null);
+
+  function openTransaction(id: string) {
+    setHistoryFocusId(id);
+    setMode("history");
+  }
+
+  function askAbout(question: string) {
+    setAskScope(null);
+    setAskRequest({ text: question, nonce: Date.now() });
+    setMode("ask");
+  }
 
   const [documentType, setDocumentType] =
     useState<DocumentType>("invoice");
@@ -296,9 +311,22 @@ export default function Home() {
         <a className="brand" href="#">
           cermat.
         </a>
-        <div className="status">
-          <span className="statusDot" />
-          local workspace
+        <div className="topbarRight">
+          <AttentionIndicator
+            onOpenTransaction={openTransaction}
+            onSupplier={(key) => {
+              setSupplierKey(key);
+              setMode("overview");
+            }}
+            onOverview={() => {
+              setSupplierKey(null);
+              setMode("overview");
+            }}
+          />
+          <div className="status">
+            <span className="statusDot" />
+            local workspace
+          </div>
         </div>
       </header>
 
@@ -312,6 +340,13 @@ export default function Home() {
       </section>
 
       <nav className="modeBar" aria-label="Workspace mode">
+        <button
+          type="button"
+          className={`modeButton ${mode === "overview" ? "active" : ""}`}
+          onClick={() => setMode("overview")}
+        >
+          Overview
+        </button>
         <button
           type="button"
           className={`modeButton ${mode === "document" ? "active" : ""}`}
@@ -341,7 +376,9 @@ export default function Home() {
           Ask cermat.
         </button>
         <span className="modeHint">
-          {mode === "document"
+          {mode === "overview"
+            ? "Rules calculate · AI explains"
+            : mode === "document"
             ? "Extract and inspect one source"
             : mode === "transaction"
               ? "PO ↔ DO ↔ Invoice"
@@ -351,7 +388,15 @@ export default function Home() {
         </span>
       </nav>
 
-      {mode === "document" ? (
+      {mode === "overview" ? (
+        <OverviewWorkspace
+          supplierKey={supplierKey}
+          onSupplier={setSupplierKey}
+          onOpenTransaction={openTransaction}
+          onAsk={askAbout}
+          onStart={setMode}
+        />
+      ) : mode === "document" ? (
         <section className="workspace">
           <form className="panel uploadPanel" onSubmit={submit}>
             <div className="panelLabel">01 / INTAKE</div>
@@ -800,10 +845,8 @@ export default function Home() {
           scope={askScope}
           onScope={setAskScope}
           onClearScope={() => setAskScope(null)}
-          onOpenTransaction={(id) => {
-            setHistoryFocusId(id);
-            setMode("history");
-          }}
+          onOpenTransaction={openTransaction}
+          request={askRequest}
         />
       </div>
     </main>
