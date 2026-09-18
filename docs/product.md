@@ -1,43 +1,42 @@
-# Product definition
+# Product definition — Phase 3
 
 ## One-line pitch
 
-cermat. is an AI operations agent that reads SME business documents, converts them into structured records, cross-checks related documents, and explains discrepancies with evidence.
+cermat. reads SME purchase documents and tells an operator exactly where the PO, delivery and invoice disagree, with the source evidence attached.
 
 ## Initial user
 
-An SME operations or finance staff member who currently checks purchase orders, delivery orders, invoices, and receipts manually.
+Finance, procurement or operations staff who manually compare purchase orders, delivery orders and supplier invoices.
 
-## MVP job-to-be-done
+## Core job-to-be-done
 
-> "Given the documents for a purchase, tell me whether what was ordered, delivered, invoiced, and paid matches — and show me exactly where anything differs."
+> Given the records for a purchase, show me whether what we ordered, what arrived and what we were billed for agree — without making me re-key every document.
 
-## MVP document types
+## Phase 3 inputs
 
-- Purchase Order (PO)
-- Delivery Order (DO)
+- Purchase Order
+- Delivery Order
 - Invoice
-- Receipt
 
-## MVP outputs
+Receipt extraction remains supported but is not yet part of the three-way matching rules.
 
-- Supplier
-- document number
-- document date
-- currency
-- subtotal / tax / total
-- line items
-- quantities
-- unit prices
-- linked documents
-- discrepancy flags
-- evidence references
-- confidence
+## Phase 3 exception classes
 
-## AI principles
+- currency mismatch
+- supplier mismatch
+- missing line item
+- unexpected delivery line
+- unexpected invoice line
+- ordered/delivered quantity variance
+- delivered/invoiced quantity variance
+- PO/invoice unit-price variance
+- invoice line arithmetic mismatch
 
-- Never silently mutate extracted data.
-- Preserve source evidence for every important extracted field.
-- Separate deterministic reconciliation rules from model-generated explanations.
-- Ask for human review when confidence is low or documents conflict.
-- Treat uploaded documents as untrusted input.
+## Product principles
+
+- Preserve the original extracted value.
+- Surface uncertainty instead of inventing certainty.
+- Prefer identifiers over fuzzy matching.
+- Keep AI perception separate from deterministic calculations.
+- Attach evidence to exceptions whenever available.
+- Make human review the final authority.

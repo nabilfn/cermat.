@@ -71,14 +71,82 @@ class ExtractionResult(AIExtraction):
     model: str
 
 
+class TransactionCreate(BaseModel):
+    name: str | None = Field(default=None, max_length=120)
+
+
+class TransactionRecord(BaseModel):
+    id: UUID
+    name: str
+    status: Literal["collecting", "ready", "matched", "review_required", "insufficient_data"]
+    created_at: datetime
+    updated_at: datetime
+
+
+class TransactionDocumentSummary(BaseModel):
+    id: UUID
+    filename: str
+    document_type: DocumentType
+    status: str
+    document_number: str | None
+    supplier_name: str | None
+    currency: str | None
+    total: float | None
+    overall_confidence: float | None
+
+
+class TransactionDetail(TransactionRecord):
+    documents: list[TransactionDocumentSummary]
+
+
+class EvidenceReference(BaseModel):
+    document_id: UUID
+    filename: str
+    document_type: DocumentType
+    field_path: str
+    source_text: str
+    page: int | None
+    value: str | None = None
+
+
+class MatchedLine(BaseModel):
+    key: str
+    description: str
+    sku: str | None
+    po_quantity: float | None
+    delivered_quantity: float | None
+    invoice_quantity: float | None
+    po_unit_price: float | None
+    invoice_unit_price: float | None
+    status: Literal["matched", "review_required", "unmatched"]
+
+
 class ReconciliationIssue(BaseModel):
-    field: str
-    expected: str
-    actual: str
+    code: str
+    title: str
     severity: Literal["low", "medium", "high"]
+    item_description: str | None = None
+    expected: str | None = None
+    actual: str | None = None
+    delta: str | None = None
     explanation: str
+    sources: list[EvidenceReference]
 
 
-class ReconciliationDemo(BaseModel):
-    status: Literal["matched", "review_required"]
+class ReconciliationSummary(BaseModel):
+    issue_count: int
+    high: int
+    medium: int
+    low: int
+    matched_lines: int
+    review_lines: int
+
+
+class ReconciliationResult(BaseModel):
+    transaction_id: UUID
+    status: Literal["matched", "review_required", "insufficient_data"]
+    documents: list[TransactionDocumentSummary]
+    summary: ReconciliationSummary
+    lines: list[MatchedLine]
     issues: list[ReconciliationIssue]
+    generated_at: datetime

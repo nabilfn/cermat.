@@ -1,32 +1,48 @@
-# Architecture
+# cermat. architecture — Phase 3
 
 ```text
 Browser
   |
   v
-Next.js web
+Next.js workspace
   |
   v
 FastAPI
-  | \
-  |  \--> Extraction service (next)
-  |        - PDF/image parser
-  |        - multimodal LLM
-  |        - structured validator
   |
-  +----> PostgreSQL / pgvector
+  +---------------------> PostgreSQL
+  |                         - documents
+  |                         - extraction JSON
+  |                         - transaction sets
+  |                         - reconciliation result
   |
-  +----> Reconciliation engine
-           - PO vs DO
-           - DO vs Invoice
-           - Invoice vs Receipt
-           - deterministic variance rules
+  +--> Upload storage volume
+  |
+  +--> AI extraction service
+  |      - PDF/image input
+  |      - multimodal model
+  |      - typed Pydantic output
+  |      - evidence snippets
+  |
+  +--> Deterministic reconciliation engine
+         - SKU matching
+         - description fallback
+         - quantity comparison
+         - unit-price comparison
+         - line arithmetic check
+         - source evidence mapping
 ```
 
-## Important boundary
+## Trust boundary
 
-The model extracts and explains.
+Uploaded files are untrusted input. Instructions printed inside a document do not become model instructions.
 
-The reconciliation engine decides numerical mismatches using deterministic code wherever possible.
+The extraction model may identify values, but it does not repair or reconcile them. Reconciliation operates on the extracted structured values and produces explicit exceptions without modifying the source data.
 
-That separation makes cermat. easier to test, audit, and demonstrate in a portfolio.
+## Item matching order
+
+1. exact normalized SKU match
+2. unused line with the strongest normalized description match
+3. description match must reach the configured similarity threshold
+4. otherwise the line remains unmatched and is surfaced for review
+
+This makes identifier-based matching dominant while still supporting invoices and delivery notes that omit SKUs.
