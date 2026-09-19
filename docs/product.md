@@ -69,3 +69,15 @@ cermat. moves from "here is a discrepancy" to "here is what is happening across 
 - **Workflow health, not people tracking.** Resolution metrics describe the review queue, not individuals.
 - **Quiet notifications.** An in-app `ATTENTION n` queue. Each condition notifies once.
 - **Not a BI dashboard.** Rows, thin rules and a small number of restrained charts. No gauges, donuts or KPI card walls.
+
+
+## Production readiness (Phase 7)
+
+cermat. is a multi-user product rather than a local demo:
+
+- **Accounts and workspaces**: sign up, sign in, owner/member roles, and strict workspace isolation.
+- **Accountability**: every upload, extraction, reconciliation, resolution, settings change and deletion is recorded with who and when, and shown as compact activity on each transaction.
+- **Evidence first**: every exception shows the source document, type, page, field, snippet and confidence, and links to the original file.
+- **Honest states**: operational loading language ("Extracting fields…"), recoverable failures with retry, clear empty states with one next action, and demo data that is always labelled.
+- **Practical output**: CSV export of review issues, respecting workspace permissions.
+- **Deployable**: migrations, production images, environment validation, health and readiness checks, and structured logs.

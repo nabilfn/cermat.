@@ -236,7 +236,7 @@ class FakeModel:
 
 
 def run_ask(snapshot: WorkspaceSnapshot, request: AskRequest, model=None):
-    async def fake_load(_session, transaction_id=None):
+    async def fake_load(_session, _workspace_id, transaction_id=None):
         if transaction_id is None:
             return snapshot
         return WorkspaceSnapshot(
@@ -245,7 +245,7 @@ def run_ask(snapshot: WorkspaceSnapshot, request: AskRequest, model=None):
 
     session = FakeSession()
     with mock.patch.object(ask_service, "load_snapshot", fake_load):
-        response = asyncio.run(ask_service.ask(session, request, model))
+        response = asyncio.run(ask_service.ask(session, request, model, uuid4()))
     return response, session
 
 

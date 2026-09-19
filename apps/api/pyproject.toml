@@ -1,0 +1,23 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+# Correctness-focused: pyflakes, pycodestyle errors, import sorting, bugbear, pyupgrade.
+select = ["F", "E", "W", "I", "B", "UP"]
+ignore = [
+    "E501",   # long lines are allowed where they read better (formatter not enforced)
+    "B008",   # FastAPI Depends()/Query() in argument defaults is idiomatic
+    "UP037",  # quoted annotations kept for forward references
+    "UP017",  # timezone.utc vs datetime.UTC — style only
+    "UP042",  # str + Enum kept for clarity — style only
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning:argon2"]

@@ -65,7 +65,12 @@ class BriefModel(Protocol):
 
 class OpenAIAskModel:
     def __init__(self) -> None:
-        self._client = OpenAI(api_key=settings.openai_api_key)
+        # Interactive calls: shorter timeout than extraction, bounded SDK retries.
+        self._client = OpenAI(
+            api_key=settings.openai_api_key,
+            timeout=min(settings.ai_timeout_seconds, 45),
+            max_retries=min(settings.ai_max_retries, 1),
+        )
         self._model = settings.openai_model
 
     def plan(self, question: str, conversation: dict[str, Any]) -> PlannerOutput:

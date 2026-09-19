@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
-import TrendChart from "./TrendChart";
+import { FormEvent, useState } from "react";
+import { api, errorMessage } from "../../lib/api";
+import { dateLabel, duration, money, observed, percent, statusClass, statusLabel } from "../../lib/format";
 import {
-  API_URL,
   AnomalySignal,
   BriefResponse,
   FAMILY_LABEL,
@@ -13,13 +13,9 @@ import {
   Period,
   PriorityItem,
   SupplierDetail,
-  dateLabel,
-  duration,
-  getJson,
-  money,
-  observed,
-  percent,
-} from "./intelligence";
+} from "../../lib/types";
+import { useResource } from "../../lib/useResource";
+import TrendChart from "./TrendChart";
 
 type OverviewProps = {
   supplierKey: string | null;
@@ -27,6 +23,9 @@ type OverviewProps = {
   onOpenTransaction: (id: string) => void;
   onAsk: (question: string) => void;
   onStart: (mode: "transaction" | "document") => void;
+  onLoadDemo: () => Promise<void>;
+  canEditSettings: boolean;
+  isDemo: boolean;
 };
 
 const BAND_LABEL = { critical: "Critical", high: "High", normal: "Normal" };
@@ -36,64 +35,41 @@ const DIRECTION_LABEL = {
   stable: "Broadly stable",
 };
 
-function statusLabel(status: string) {
-  return (
-    {
-      collecting: "Open",
-      ready: "Open",
-      matched: "Matched",
-      review_required: "Needs review",
-      insufficient_data: "More data",
-      resolved: "Resolved",
-    } as Record<string, string>
-  )[status] ?? status;
-}
-
-function statusClass(status: string) {
-  return ["collecting", "ready", "insufficient_data"].includes(status) ? "open" : status;
-}
-
 export default function OverviewWorkspace({
   supplierKey,
   onSupplier,
   onOpenTransaction,
   onAsk,
   onStart,
+  onLoadDemo,
+  canEditSettings,
+  isDemo,
 }: OverviewProps) {
   const [period, setPeriod] = useState<Period>("30d");
-  const [overview, setOverview] = useState<OverviewResponse | null>(null);
-  const [brief, setBrief] = useState<BriefResponse | null>(null);
-  const [briefLoading, setBriefLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [demoState, setDemoState] = useState<{ busy: boolean; error: string }>({ busy: false, error: "" });
+  const key = `${period}:${reloadKey}`;
+  const overviewResource = useResource<OverviewResponse>(key, (signal) =>
+    api<OverviewResponse>(`/api/v1/intelligence/overview?period=${period}`, { signal })
+  );
+  const briefResource = useResource<BriefResponse>(key, (signal) =>
+    api<BriefResponse>(`/api/v1/intelligence/brief?period=${period}`, { signal })
+  );
+  const overview = overviewResource.data;
+  const error = overviewResource.error;
+  const loading = overviewResource.loading;
+  const brief = briefResource.error ? null : briefResource.data;
+  const briefLoading = briefResource.loading;
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError("");
-    getJson<OverviewResponse>(`/api/v1/intelligence/overview?period=${period}`)
-      .then((data) => !cancelled && setOverview(data))
-      .catch((err: Error) =>
-        !cancelled &&
-        setError(
-          err instanceof TypeError
-            ? "Cannot reach the cermat. API. Check that the API service is running."
-            : err.message
-        )
-      )
-      .finally(() => !cancelled && setLoading(false));
-
-    setBriefLoading(true);
-    getJson<BriefResponse>(`/api/v1/intelligence/brief?period=${period}`)
-      .then((data) => !cancelled && setBrief(data))
-      .catch(() => !cancelled && setBrief(null))
-      .finally(() => !cancelled && setBriefLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [period, reloadKey]);
+  async function loadDemo() {
+    setDemoState({ busy: true, error: "" });
+    try {
+      await onLoadDemo();
+    } catch (err) {
+      setDemoState({ busy: false, error: errorMessage(err, "Could not open the demo workspace.") });
+    }
+  }
 
   if (supplierKey) {
     return (
@@ -135,14 +111,16 @@ export default function OverviewWorkspace({
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className="askTextButton"
-          aria-expanded={showSettings}
-          onClick={() => setShowSettings((current) => !current)}
-        >
-          Thresholds
-        </button>
+        {canEditSettings && (
+          <button
+            type="button"
+            className="askTextButton"
+            aria-expanded={showSettings}
+            onClick={() => setShowSettings((current) => !current)}
+          >
+            Thresholds
+          </button>
+        )}
       </div>
     </header>
   );
@@ -173,35 +151,34 @@ export default function OverviewWorkspace({
       <section className="panel overviewPanel">
         {header}
         <div className="onboarding">
-          <h2>Nothing to analyse yet.</h2>
-          <p>
-            The overview summarises reconciled transactions: exceptions, supplier
-            patterns and trends. It stays empty until there are real records — cermat.
-            does not fill it with sample figures.
-          </p>
-          <ol>
-            <li>
-              <button type="button" onClick={() => onStart("transaction")}>
-                <span>01</span>
-                Run a three-way match
-                <small>Upload a PO, delivery order and invoice for one purchase.</small>
-              </button>
-            </li>
-            <li>
-              <button type="button" onClick={() => onStart("document")}>
-                <span>02</span>
-                Extract a single document
-                <small>Check what cermat. reads from one PDF or image.</small>
-              </button>
-            </li>
-            <li>
-              <div>
-                <span>03</span>
-                Exploring? Load demo data
-                <code>docker compose exec api python -m scripts.seed_demo</code>
-              </div>
-            </li>
+          <p className="onboardingBrand">cermat.</p>
+          <h2>Turn purchasing documents into evidence-backed operational decisions.</h2>
+          <ol className="onboardingSteps">
+            <li><span>1</span>Upload documents</li>
+            <li><span>2</span>Compare the transaction</li>
+            <li><span>3</span>Review exceptions</li>
+            <li><span>4</span>Ask cermat. what needs attention</li>
           </ol>
+          <p className="onboardingNote">
+            This overview stays empty until there are real, reconciled records — cermat. never fills it with
+            sample figures.
+          </p>
+          <div className="onboardingActions">
+            <button type="button" onClick={() => onStart("transaction")}>
+              Start with a document
+            </button>
+            {!isDemo && (
+              <button type="button" className="secondaryButton" onClick={() => void loadDemo()} disabled={demoState.busy}>
+                {demoState.busy ? "Preparing demo workspace…" : "Load demo workspace"}
+              </button>
+            )}
+          </div>
+          {demoState.error && <p className="error" role="alert">{demoState.error}</p>}
+          {!isDemo && (
+            <p className="overviewFootnote">
+              The demo opens in a separate workspace labelled DEMO DATA. Your workspace is never modified.
+            </p>
+          )}
         </div>
       </section>
     );
@@ -621,47 +598,37 @@ function AnomalyRow({
 }
 
 function ThresholdSettings({ onSaved }: { onSaved: () => void }) {
-  const [values, setValues] = useState<IntelligenceSettings | null>(null);
+  const resource = useResource<IntelligenceSettings>("settings", (signal) =>
+    api<IntelligenceSettings>("/api/v1/settings/intelligence", { signal })
+  );
+  const [draft, setDraft] = useState<IntelligenceSettings | null>(null);
+  const values = draft ?? resource.data;
+  const setValues = setDraft;
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const load = useCallback(() => {
-    getJson<IntelligenceSettings>("/api/v1/settings/intelligence")
-      .then(setValues)
-      .catch((err: Error) => setError(err.message));
-  }, []);
-  useEffect(load, [load]);
+  const [saveError, setSaveError] = useState("");
+  const error = saveError || resource.error;
 
   async function save(event: FormEvent, reset = false) {
     event.preventDefault();
     if (!values) return;
     setSaving(true);
-    setError("");
+    setSaveError("");
     try {
-      const response = await fetch(`${API_URL}/api/v1/settings/intelligence`, {
+      await api("/api/v1/settings/intelligence", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          reset
-            ? { reset: true }
-            : {
-                high_value_variance_amount: values.high_value_variance_amount,
-                high_variance_percentage: values.high_variance_percentage,
-                recurring_issue_min_count: values.recurring_issue_min_count,
-                recurring_issue_period_days: values.recurring_issue_period_days,
-                overdue_review_days: values.overdue_review_days,
-              }
-        ),
+        json: reset
+          ? { reset: true }
+          : {
+              high_value_variance_amount: values.high_value_variance_amount,
+              high_variance_percentage: values.high_variance_percentage,
+              recurring_issue_min_count: values.recurring_issue_min_count,
+              recurring_issue_period_days: values.recurring_issue_period_days,
+              overdue_review_days: values.overdue_review_days,
+            },
       });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(
-          typeof payload?.detail === "string" ? payload.detail : "Values are out of range."
-        );
-      }
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save thresholds.");
+      setSaveError(errorMessage(err, "Could not save thresholds."));
     } finally {
       setSaving(false);
     }
@@ -729,16 +696,11 @@ function SupplierView({
   onOpenTransaction: (id: string) => void;
   onAsk: (question: string) => void;
 }) {
-  const [detail, setDetail] = useState<SupplierDetail | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setDetail(null);
-    setError("");
-    getJson<SupplierDetail>(`/api/v1/intelligence/suppliers/${encodeURIComponent(supplierKey)}`)
-      .then(setDetail)
-      .catch((err: Error) => setError(err.message));
-  }, [supplierKey]);
+  const resource = useResource<SupplierDetail>(supplierKey, (signal) =>
+    api<SupplierDetail>(`/api/v1/intelligence/suppliers/${encodeURIComponent(supplierKey)}`, { signal })
+  );
+  const detail = resource.data && resource.data.supplier.supplier_key === supplierKey ? resource.data : null;
+  const error = resource.error;
 
   return (
     <section className="panel overviewPanel supplierPanel">

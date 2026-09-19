@@ -3,7 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "cermat.",
-  description: "AI operations intelligence for business documents.",
+  description:
+    "AI operations intelligence for purchasing documents: evidence-backed extraction, deterministic reconciliation and human review.",
 };
 
 export default function RootLayout({
@@ -13,7 +14,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <a className="skipLink" href="#main">
+          Skip to main content
+        </a>
+        {children}
+      </body>
     </html>
   );
 }

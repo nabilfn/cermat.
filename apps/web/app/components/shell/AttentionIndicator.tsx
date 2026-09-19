@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API_URL, AttentionEvent, AttentionList, getJson, relativeTime } from "./intelligence";
+import { api } from "../../lib/api";
+import { relativeTime } from "../../lib/format";
+import type { AttentionEvent, AttentionList } from "../../lib/types";
 
 const REFRESH_MS = 60_000;
 
@@ -12,11 +14,7 @@ type Props = {
 };
 
 async function patch(id: string, body: { seen?: boolean; dismissed?: boolean }) {
-  await fetch(`${API_URL}/api/v1/attention/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  await api(`/api/v1/attention/${id}`, { method: "PATCH", json: body }).catch(() => undefined);
 }
 
 export default function AttentionIndicator({ onOpenTransaction, onSupplier, onOverview }: Props) {
@@ -27,7 +25,7 @@ export default function AttentionIndicator({ onOpenTransaction, onSupplier, onOv
 
   const refresh = useCallback(async () => {
     try {
-      setData(await getJson<AttentionList>("/api/v1/attention"));
+      setData(await api<AttentionList>("/api/v1/attention"));
       setFailed(false);
     } catch {
       setFailed(true);
@@ -35,10 +33,22 @@ export default function AttentionIndicator({ onOpenTransaction, onSupplier, onOv
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), REFRESH_MS);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
+    let active = true;
+    const load = () =>
+      api<AttentionList>("/api/v1/attention")
+        .then((list) => {
+          if (!active) return;
+          setData(list);
+          setFailed(false);
+        })
+        .catch(() => active && setFailed(true));
+    load();
+    const timer = window.setInterval(load, REFRESH_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;

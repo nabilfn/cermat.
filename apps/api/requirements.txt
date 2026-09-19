@@ -5,4 +5,8 @@ pydantic
 pydantic-settings
 sqlalchemy
 asyncpg
+alembic
+argon2-cffi
 openai
+pypdf
+boto3

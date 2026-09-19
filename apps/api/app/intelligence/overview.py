@@ -26,8 +26,8 @@ from app.intelligence.suppliers import supplier_intelligence
 from app.intelligence.trends import exception_trend
 from app.intelligence.variance import (
     average_abs_percentage,
-    currency_totals,
     billed_percentage,
+    currency_totals,
     financial_variance,
 )
 from app.schemas import (

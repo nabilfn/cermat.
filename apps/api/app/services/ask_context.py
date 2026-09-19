@@ -92,6 +92,7 @@ class SourceRegistry:
             source_text=_clip(reference.source_text, MAX_SNIPPET) or "",
             confidence=confidence,
             snippet_available=reference.source_text != NO_SNIPPET,
+            has_source_file=document.has_file if document is not None else False,
         )
         self._by_key[key] = source
         return source.id

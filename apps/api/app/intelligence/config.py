@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,8 +14,6 @@ from app.schemas import (
     IntelligenceSettingsUpdate,
     PriorityWeights,
 )
-
-SETTINGS_ROW_ID = 1
 
 
 def merge_settings(
@@ -42,9 +41,11 @@ def merge_settings(
     return merged
 
 
-async def load_settings(session: AsyncSession) -> tuple[IntelligenceSettings, datetime | None]:
+async def load_settings(
+    session: AsyncSession, workspace_id: UUID
+) -> tuple[IntelligenceSettings, datetime | None]:
     """Read-only. A missing or invalid row falls back to defaults."""
-    row = await session.get(IntelligenceSettingsModel, SETTINGS_ROW_ID)
+    row = await session.get(IntelligenceSettingsModel, workspace_id)
     if row is None:
         return IntelligenceSettings(), None
     try:
@@ -61,10 +62,12 @@ def settings_record(settings: IntelligenceSettings, updated_at: datetime | None)
     )
 
 
-async def save_settings(session: AsyncSession, settings: IntelligenceSettings) -> IntelligenceSettingsRecord:
-    row = await session.get(IntelligenceSettingsModel, SETTINGS_ROW_ID)
+async def save_settings(
+    session: AsyncSession, workspace_id: UUID, settings: IntelligenceSettings
+) -> IntelligenceSettingsRecord:
+    row = await session.get(IntelligenceSettingsModel, workspace_id)
     if row is None:
-        row = IntelligenceSettingsModel(id=SETTINGS_ROW_ID, config=settings.model_dump())
+        row = IntelligenceSettingsModel(workspace_id=workspace_id, config=settings.model_dump())
         session.add(row)
     else:
         row.config = settings.model_dump()

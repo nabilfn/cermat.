@@ -177,8 +177,12 @@ def plan_attention_changes(
     return to_insert, to_clear, to_restore
 
 
-async def sync_attention(session: AsyncSession, candidates: list[Candidate], now: datetime) -> None:
-    rows = (await session.execute(select(AttentionEventModel))).scalars().all()
+async def sync_attention(
+    session: AsyncSession, workspace_id: UUID, candidates: list[Candidate], now: datetime
+) -> None:
+    rows = (
+        await session.execute(select(AttentionEventModel).where(AttentionEventModel.workspace_id == workspace_id))
+    ).scalars().all()
     existing = {
         row.event_key: ExistingEvent(
             event_key=row.event_key,
@@ -199,6 +203,7 @@ async def sync_attention(session: AsyncSession, candidates: list[Candidate], now
             .values(
                 [
                     {
+                        "workspace_id": workspace_id,
                         "event_key": c.event_key,
                         "event_type": c.event_type,
                         "title": c.title[:200],
@@ -213,7 +218,7 @@ async def sync_attention(session: AsyncSession, candidates: list[Candidate], now
                     for c in to_insert
                 ]
             )
-            .on_conflict_do_nothing(index_elements=["event_key"])
+            .on_conflict_do_nothing(index_elements=["workspace_id", "event_key"])
         )
     await session.commit()
 
@@ -237,8 +242,10 @@ def attention_record(row: AttentionEventModel) -> AttentionEventRecord:
     )
 
 
-async def list_attention(session: AsyncSession, *, include_inactive: bool = False) -> AttentionList:
-    query = select(AttentionEventModel)
+async def list_attention(
+    session: AsyncSession, workspace_id: UUID, *, include_inactive: bool = False, limit: int = 100
+) -> AttentionList:
+    query = select(AttentionEventModel).where(AttentionEventModel.workspace_id == workspace_id)
     if not include_inactive:
         query = query.where(
             AttentionEventModel.dismissed_at.is_(None),
@@ -253,5 +260,5 @@ async def list_attention(session: AsyncSession, *, include_inactive: bool = Fals
     return AttentionList(
         active_count=len(active),
         unseen_count=sum(1 for row in active if row.seen_at is None),
-        events=[attention_record(row) for row in rows[:100]],
+        events=[attention_record(row) for row in rows[:limit]],
     )

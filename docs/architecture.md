@@ -1,4 +1,105 @@
-# Architecture — Phase 6
+# Architecture
+
+> cermat. computes operational facts deterministically and uses AI to explain them.
+> **AI reads. Rules verify. Evidence proves. cermat. explains. Humans decide.**
+
+```text
+                         ┌──────────────────┐
+                         │   Next.js Web    │  /, /signin, /signup, /workspace
+                         └────────┬─────────┘  same-origin /api/* proxy
+                                  │
+                                  ▼
+                         ┌──────────────────┐
+                         │   FastAPI API    │  request id · body limits · auth · CSRF
+                         └────────┬─────────┘  workspace membership · errors · audit
+                                  │
+          ┌───────────────────────┼────────────────────────┐
+          ▼                       ▼                        ▼
+ ┌────────────────┐      ┌──────────────────┐      ┌────────────────┐
+ │ AI Extraction  │      │ Business Rules   │      │ Ask cermat.    │
+ │ multimodal     │      │ reconciliation   │      │ safe intents   │
+ │ structured     │      │ variance         │      │ retrieval      │
+ │ evidence       │      │ priority         │      │ grounded       │
+ └───────┬────────┘      │ anomalies        │      │ synthesis      │
+         │               └────────┬─────────┘      └───────┬────────┘
+         └────────────────────────┼────────────────────────┘
+                                  ▼
+                         ┌──────────────────┐
+                         │   PostgreSQL     │  Alembic migrations
+                         └──────────────────┘
+                                  +
+                         Object file storage (local or S3-compatible)
+```
+
+## Platform (Phase 7)
+
+### Request lifecycle
+
+1. The browser calls `/api/*` on the web origin. Next.js rewrites it to FastAPI (`API_INTERNAL_URL`). The proxy passes bodies up to `MAX_UPLOAD_MB` and waits up to 180 s for long extractions.
+2. `RequestContextMiddleware` assigns an `X-Request-ID`, rejects oversized bodies (1 MB for JSON, `MAX_UPLOAD_MB` for uploads) and logs latency as structured JSON.
+3. `current_user` authenticates the session cookie and checks `X-CSRF-Token` on unsafe methods. `workspace_context` verifies membership of the requested workspace, and `owner_context` additionally requires the owner role.
+4. Routers call services, and every query is filtered by the verified `workspace_id`.
+5. Errors are rendered as `{"error": {"code", "message", "request_id"}}` by `app/core/errors.py`.
+
+### Backend layout
+
+```text
+apps/api/
+├── app/
+│   ├── main.py                 app assembly: middleware, error handlers, routers, /health, /ready
+│   ├── config.py               settings, validated per environment
+│   ├── core/                   context vars, errors, logging, middleware, security, rate limiting
+│   ├── auth/deps.py            authentication, CSRF, workspace authorization
+│   ├── routers/                auth · workspaces · documents · transactions (incl. review issues,
+│   │                           activity) · ask · intelligence · attention · settings · exports · audit
+│   ├── services/               extraction · reconciliation · review · transactions · storage ·
+│   │                           uploads · audit · demo · ask* · grounding
+│   ├── intelligence/           overview · priority · patterns · anomalies · suppliers · trends ·
+│   │                           brief · attention · dataset · variance · config
+│   └── prompts/                model instructions (never returned by the API)
+├── migrations/                 Alembic (0001 baseline, 0002 workspaces/auth/audit)
+├── scripts/                    seed_demo, claim_legacy_workspace
+└── tests/                      unit, PostgreSQL integration, IDOR, migrations
+```
+
+Review-issue endpoints live on the transactions router (`/transactions/{id}/issues`) because an issue is always addressed through its transaction.
+
+### Storage
+
+`services/storage.py` defines `store / get / delete / get_signed_url` with `LocalStorageProvider` (a volume) and `S3StorageProvider` (any S3-compatible service). Object keys are server-generated as `<workspace>/<uuid><ext>`. Extraction reads **bytes** from the provider, never a filesystem path. Production refuses local storage unless it is explicitly allowed with a persistent volume.
+
+### AI reliability
+
+- One OpenAI client per call, with `timeout=AI_TIMEOUT_SECONDS` and `max_retries=AI_MAX_RETRIES` (SDK backoff on connection errors, 408/429/5xx). Nothing retries forever.
+- Structured outputs are validated by Pydantic. Schema mismatches become `EXTRACTION_FAILED`, and provider problems become `AI_PROVIDER_ERROR`.
+- Document statuses are `uploaded → processing → extracted | needs_review | failed`. On failure the source file is kept and the document can be re-extracted. A document left in `processing` (for example after an API restart) is marked `failed` at startup, or when read after the stale window, so the UI can never wait forever.
+- No background queue. Extraction is one synchronous request per document, which at SME volumes is simpler and fully observable. The three-way UI tracks each step and resumes from the failed step. A queue (and worker) is the documented next step if batch sizes grow.
+
+### Frontend layout
+
+```text
+apps/web/
+├── proxy.ts                    signed-out redirect for /workspace (convenience; the API enforces auth)
+├── next.config.ts              /api rewrite, body/timeout limits, security headers, standalone output
+└── app/
+    ├── page.tsx                public entry page
+    ├── signin/ signup/         auth pages
+    ├── workspace/page.tsx      session gate → <Workspace key={workspaceId}>
+    ├── lib/                    api.ts (typed client) · session.tsx · types.ts · format.ts · useResource.ts
+    └── components/
+        ├── shell/              Workspace, AttentionIndicator, DemoBanner, WorkspacePanel, AuthForm
+        ├── documents/          SingleDocument
+        ├── reconciliation/     ThreeWayMatch
+        ├── reviews/            HistoryWorkspace
+        ├── ask/                AskWorkspace
+        ├── intelligence/       OverviewWorkspace, TrendChart
+        └── shared/             Evidence, IssueCard, ConfirmDialog, FileDrop
+```
+
+`lib/api.ts` is the only place that calls `fetch`. It adds the CSRF token and workspace header, turns every failure into `ApiError(code, message, requestId)`, reports 401s to the session provider, and reads NDJSON streams. Switching workspace re-mounts the workspace tree, so no data can bleed between workspaces in the UI.
+
+---
+
 
 ```text
 Browser

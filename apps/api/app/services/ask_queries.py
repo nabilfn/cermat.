@@ -104,6 +104,7 @@ class DocumentSnap:
     total: float | None
     overall_confidence: float | None
     evidence: list[dict]
+    has_file: bool = True
 
 
 @dataclass
@@ -253,6 +254,7 @@ def _document_snap(document: DocumentModel) -> DocumentSnap:
         total=extraction.get("total"),
         overall_confidence=extraction.get("overall_confidence"),
         evidence=evidence if isinstance(evidence, list) else [],
+        has_file=document.storage_key is not None,
     )
 
 
@@ -308,10 +310,14 @@ def _transaction_snap(transaction: TransactionSetModel) -> TransactionSnap:
 
 
 async def load_snapshot(
-    session: AsyncSession, transaction_id: UUID | None = None
+    session: AsyncSession, workspace_id: UUID, transaction_id: UUID | None = None
 ) -> WorkspaceSnapshot:
-    """Read persisted records. Fixed SELECTs only — this function never writes."""
-    query = select(TransactionSetModel).order_by(TransactionSetModel.updated_at.desc())
+    """Read one workspace's records. Fixed SELECTs only — this function never writes."""
+    query = (
+        select(TransactionSetModel)
+        .where(TransactionSetModel.workspace_id == workspace_id)
+        .order_by(TransactionSetModel.updated_at.desc())
+    )
     if transaction_id is not None:
         query = query.where(TransactionSetModel.id == transaction_id)
     transactions = [
@@ -335,6 +341,7 @@ async def load_snapshot(
 
     issue_rows = await session.execute(
         select(ReviewIssueModel).where(
+            ReviewIssueModel.workspace_id == workspace_id,
             ReviewIssueModel.transaction_id.in_(ids),
             ReviewIssueModel.active.is_(True),
         )

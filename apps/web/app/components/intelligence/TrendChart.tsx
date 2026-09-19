@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { TrendResponse } from "./intelligence";
+import type { TrendResponse } from "../../lib/types";
 
 // Created → ink columns; open at end of period → olive line (one count axis).
 // Palette checked with the dataviz validator: CVD ΔE 32.6, contrast ≥ 3:1 on

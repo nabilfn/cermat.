@@ -1,0 +1,5 @@
+-r requirements.txt
+pytest
+ruff
+# Used directly by the integration tests (also a transitive dependency of openai).
+httpx2

@@ -1,206 +1,187 @@
 # cermat.
 
-**cermat.** is an AI operations agent for SMEs that reads business documents, turns them into structured records, reconciles related documents with deterministic rules, and routes discrepancies through a human review workflow.
-
-## Phase 6 — Intelligence & Operations
-
-> cermat. computes operational facts deterministically and uses AI to explain them.
-> **Rules calculate. Data proves. AI explains. Humans decide.**
-
-cermat. now opens on an **Overview** that answers: what needs attention, what changed, which suppliers keep causing exceptions, and whether things are improving.
+**Evidence-backed AI operations intelligence for purchasing documents.** cermat. reads purchase orders, delivery orders and invoices, verifies them against each other with deterministic rules, and shows reviewers exactly which evidence supports every exception.
 
 ```text
-Review issues ─► Operational metrics ─┬─► Rule-based signals (priority, anomalies)
-                                      └─► Pattern analysis (recurring issues)
-                                                  │
-                                                  ▼
-                                   Intelligence layer ─► Overview · Supplier view
-                                                  │      Attention queue · Ask cermat.
-                                                  ▼
-                                     cermat. brief (AI wording, grounded + checked)
+AI reads.  Rules verify.  Evidence proves.  cermat. explains.  Humans decide.
 ```
 
-- **Needs attention** — open exceptions, high severity, affected transactions, active billed variance per currency (never converted), overdue reviews.
-- **Priority queue** — a transparent points score (severity, billed variance, age, overdue, related issues, recurring supplier, issue type). Every point is listed as a reason. `critical` needs a clear rule: high severity **and** a high-value variance or an overdue review.
-- **Trend** — exceptions created/resolved per day or week, compared with the previous period. Not shown until there is enough history.
-- **Supplier intelligence** — volume, issue rate, current signals, variance, recurring patterns and anomalies per supplier.
-- **Recurring patterns** — the same kind of exception ≥ 3 times in 90 days across ≥ 2 transactions (configurable).
-- **Anomaly signals** — explainable rules, each reporting observed value, baseline and threshold.
-- **Attention queue** — `ATTENTION n` in the top bar. Events are keyed, so each condition notifies once.
-- **Data quality** — extraction gaps (low confidence, missing date/number/currency/evidence), kept separate from reconciliation exceptions.
-- **Thresholds** — editable from the Overview, stored in PostgreSQL.
-- **Ask cermat.** — new intents: "What changed in the last 30 days?", "Are price discrepancies increasing?", "Which recurring patterns should I review?", "Why is ABC Supplies appearing in the priority queue?"
+![Operations overview](docs/screenshots/01-overview.png)
 
-### Demo data
+## Why it exists
 
-```bash
-docker compose exec api python -m scripts.seed_demo
-```
+Small finance and operations teams still check purchase documents by hand: did we receive what we ordered, and were we billed for what we received? Generic "AI document" tools read the documents but then let a language model *decide* whether numbers agree. That is hard to trust and impossible to audit.
 
-Opt-in only. Seeds ~23 backdated transactions across five suppliers and three currencies: clean matches, price and quantity discrepancies, a supplier mismatch, a currency mismatch, resolved and overdue issues, recurring supplier and item patterns, an 18.2% price anomaly, an unusually large invoice, a new supplier with a high-severity exception, missing invoices and a low-confidence extraction. Safe to run twice.
+cermat. keeps the AI where it is strong — reading messy documents and explaining results — and keeps every business decision in deterministic, testable code with the source evidence attached.
 
-## Phase 5 — Ask cermat.
+## What it does
 
-Ask cermat. is a read-only, evidence-grounded question layer over the records cermat. already stores. Ask things like:
+- **Extracts** POs, delivery orders, invoices and receipts (PDF or image) into structured fields and line items. Every value carries the source snippet, page and confidence.
+- **Reconciles** PO ↔ DO ↔ invoice with deterministic rules: quantity, unit price, line arithmetic, supplier and currency.
+- **Tracks review**: each exception becomes a persistent review issue that people resolve or reopen with a note. Decisions survive re-reconciliation.
+- **Ask cermat.**: natural-language questions ("Why is PO-2026-097 flagged?") are mapped to a fixed set of safe query intents and answered from records, with evidence chips.
+- **Operations intelligence**: an overview with a priority queue, supplier intelligence, recurring patterns, anomaly signals, trends and a short brief.
+- **Workspaces**: accounts, owner/member roles, workspace isolation, an audit trail, CSV export, deletion and a labelled demo workspace.
 
-- What needs my attention?
-- Why is PO-2026-001 flagged?
-- Which suppliers have unresolved price discrepancies?
-- Show transactions where invoiced quantity exceeded delivered quantity.
-
-Every answer is built from persisted transactions, review issues and extraction evidence, and every factual line cites its source as a chip (`INV-4482 · p.1`) that opens the document, page, field, extracted value, snippet and confidence.
+## Product workflow
 
 ```text
-                  Ask cermat.
-                       │
-                       ▼
-             Structured intent          (model structured output, or keyword fallback)
-                       │
-                       ▼
-             Safe query handlers        (fixed Python handlers; no model-written SQL)
-                       │
-                       ▼
-                 PostgreSQL             (three fixed read-only SELECTs)
-                       │
-                       ▼
-              Grounded context          (variances and counts calculated in Python)
-                       │
-                       ▼
-                LLM synthesis           (numbers checked against the records)
-                       │
-                       ▼
-            Answer + source evidence
+Upload PO / DO / Invoice
+   → AI extraction (fields + evidence + confidence)
+   → deterministic three-way reconciliation
+   → review issues with expected / actual / difference and source evidence
+   → human resolves or reopens, with a note (audited)
+   → Overview, supplier intelligence and attention queue update
+   → Ask cermat. answers questions from the same records
 ```
 
-> Retrieve facts deterministically. Let AI explain them clearly.
+| | |
+|---|---|
+| ![Evidence-backed discrepancy](docs/screenshots/02-evidence-backed-discrepancy.png) | ![Review workflow](docs/screenshots/03-review-workflow.png) |
+| ![Ask cermat.](docs/screenshots/04-ask-cermat.png) | ![Supplier intelligence](docs/screenshots/05-supplier-intelligence.png) |
 
-Open **Ask cermat.** from the mode bar, or press **Ask about this →** on a transaction in Review history to scope questions to it ("Why is this flagged?").
+Screenshots are of the running app with the demo workspace loaded.
 
-### Try it with demo data
+## Architecture
+
+```text
+                         ┌──────────────────┐
+                         │   Next.js Web    │  same-origin /api/* proxy
+                         └────────┬─────────┘  (session cookie stays first-party)
+                                  │
+                                  ▼
+                         ┌──────────────────┐
+                         │   FastAPI API    │  auth · workspaces · audit · errors
+                         └────────┬─────────┘
+                                  │
+          ┌───────────────────────┼────────────────────────┐
+          │                       │                        │
+          ▼                       ▼                        ▼
+ ┌────────────────┐      ┌──────────────────┐      ┌────────────────┐
+ │ AI Extraction  │      │ Business Rules   │      │ Ask cermat.    │
+ │ multimodal     │      │ reconciliation   │      │ safe intents   │
+ │ structured     │      │ variance         │      │ retrieval      │
+ │ evidence       │      │ priority         │      │ grounded       │
+ └───────┬────────┘      │ anomalies        │      │ synthesis      │
+         │               └────────┬─────────┘      └───────┬────────┘
+         └────────────────────────┼────────────────────────┘
+                                  ▼
+                         ┌──────────────────┐
+                         │   PostgreSQL     │  Alembic migrations
+                         └──────────────────┘
+                                  +
+                         Object file storage (local or S3-compatible)
+```
+
+More detail: [docs/architecture.md](docs/architecture.md) · [docs/data-model.md](docs/data-model.md).
+
+## AI vs deterministic logic
+
+| AI (model) | Deterministic code | Human |
+|---|---|---|
+| Document understanding: fields, line items, evidence snippets | Reconciliation (quantities, prices, arithmetic, supplier, currency) | Review each exception |
+| Classifying a question into one of a fixed set of intents | Variance amounts and percentages | Resolve or reopen, with a note |
+| Wording grounded answers and the brief from supplied facts | Priority scoring, metrics, trends, anomaly thresholds, patterns | Business decisions |
+
+**How hallucination risk is controlled**
+
+- The model never decides a discrepancy. Code does, and the result is persisted with its evidence.
+- Ask cermat. cannot run SQL. The model picks an intent and filter values, and every entity is resolved to a database ID before a fixed query runs.
+- Answers are generated only from a compact record set. If a model's answer contains a number that is not in those records, it is discarded and an answer written directly from the records is shown instead.
+- The brief is also rejected if it uses accusatory language ("fraud", "suspicious", …).
+- Everything works without a model key: keyword planning and record-built answers, clearly labelled.
+
+## Key features
+
+- Evidence on every exception: document, type, page, field, extracted value, snippet, confidence, and a link to open the original file.
+- A transparent priority score. Every point is listed as a reason, and "critical" requires a stated rule.
+- Recurring-pattern and anomaly rules that show observed value, baseline and threshold. No black-box risk scores.
+- Multi-currency variance, reported per currency and never converted.
+- Paginated, searchable history; CSV export; per-transaction activity; confirmed deletion.
+- Resumable three-way processing. If extraction fails part-way, completed steps are kept and "Retry" resumes.
+
+## Tech stack
+
+- **Web**: Next.js 16, React 19, TypeScript. Plain CSS design system, no UI kit.
+- **API**: FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic.
+- **Data**: PostgreSQL 16. Files on a local volume or S3-compatible storage.
+- **AI**: OpenAI Responses API with strict structured outputs (configurable model).
+- **Auth**: Argon2id password hashing, server-side sessions, CSRF tokens.
+- **Quality**: pytest, ruff, ESLint, tsc, GitHub Actions.
+
+## Local setup
+
+Requirements: Docker with Compose.
 
 ```bash
-docker compose exec api python -m scripts.seed_demo
+git clone <repo> cermat && cd cermat
+cp .env.example .env            # add OPENAI_API_KEY for live extraction (optional)
+docker compose up --build       # migrations run automatically on API start
 ```
 
-This inserts five pre-extracted demo transactions (PO-2026-001, -091, -103, -114, -120) and runs the real reconciliation engine over them. It needs no model calls and skips transactions that already exist.
+Open http://localhost:3000, create an account, then either:
 
-### Without a model key
+- **Start with a document**: upload a PO, DO and invoice in *Three-way match* (needs `OPENAI_API_KEY`), or
+- **Load demo workspace**: a separate workspace labelled **DEMO DATA** with about 23 reconciled transactions. No model key is needed.
 
-If `OPENAI_API_KEY` is missing or invalid, Ask cermat. still works. A keyword planner interprets the question, and the answer is composed directly from the records. The answer says so in a notice.
+To run migrations by hand: `docker compose exec api alembic upgrade head`.
 
-## Phase 4
+Upgrading a database from before accounts existed? Existing data moves into a *Legacy workspace*. In development the first account you create owns it; in production run `docker compose exec api python -m scripts.claim_legacy_workspace you@example.com`.
 
-Phase 4 adds the persistent operating layer around the Phase 3 reconciliation engine:
+## Environment variables
 
-1. Upload a PO, delivery order, and invoice.
-2. Extract each source with the multimodal AI layer.
-3. Run deterministic three-way matching.
-4. Persist every reconciliation exception as a review issue.
-5. Search transaction history.
-6. Open a historical transaction and inspect its evidence.
-7. Resolve or reopen individual issues with an optional resolution note.
-8. Move the transaction from `Needs review` to `Resolved` when all active issues are closed.
+See [.env.example](.env.example). The important ones:
 
-A stable issue identity prevents rerunning the same reconciliation from creating duplicate review items. If the business exception materially changes, cermat. opens a new issue instead of silently reusing the old decision.
+| Variable | Purpose |
+|---|---|
+| `APP_ENV` | `development`, `test` or `production`. Production refuses insecure defaults at startup. |
+| `SECRET_KEY` | HMAC key for session and CSRF token digests (≥ 32 random characters in production) |
+| `DATABASE_URL` | PostgreSQL (asyncpg) connection string |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | AI provider. Optional; features degrade gracefully without it. |
+| `STORAGE_PROVIDER` | `local` or `s3` (plus `S3_*`) |
+| `MAX_UPLOAD_MB`, `MAX_PDF_PAGES` | Upload limits |
+| `RATE_LIMIT_AI_PER_MINUTE` | Per-user limit for extraction, Ask and the brief |
+| `CORS_ORIGINS` | Only needed if a browser calls the API from another origin |
 
-## Stack
-
-- Web: Next.js + React + TypeScript
-- API: FastAPI + Pydantic
-- Database: PostgreSQL
-- Vector extension: pgvector-ready PostgreSQL image
-- AI extraction: OpenAI Responses API with structured extraction
-- Reconciliation: deterministic Python rules
-- Local development: Docker Compose
-
-## Run
+## Testing
 
 ```bash
-cp .env.example .env
+docker compose exec api pytest            # backend: unit + PostgreSQL integration
+docker compose exec api ruff check .
+docker compose exec web npm run typecheck
+docker compose exec web npm run lint
+docker build --target production apps/web # production build
 ```
 
-Add your API key to `.env`:
+- **Unit**: reconciliation, variance, priority scoring, patterns, anomalies, trends, Ask intent routing and grounding, authorization helpers.
+- **Integration** (real PostgreSQL, separate `*_test` database): auth, CSRF, uploads, extraction failure recovery, transactions, reconciliation reruns, review, workspace scoping, roles, demo reset, deletion, exports, rate limits, migrations from both a clean and a Phase 6 database.
+- **End-to-end smoke** (API level): sign up → upload PO/DO/invoice → extract → reconcile → evidence → resolve → Overview → Ask.
+- **Authorization (IDOR)**: a second user probes every resource type (documents, files, transactions, issues, Ask context, suppliers, attention, audit, exports, workspace header) and always gets 404.
 
-```env
-OPENAI_API_KEY=your_key_here
-OPENAI_MODEL=gpt-5.6-luna
-```
+CI runs all of this on every push ([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
-Then:
+## Security model
 
-```bash
-docker compose up --build
-```
+- Argon2id passwords, opaque session tokens in httpOnly `SameSite=Lax` cookies (`Secure` in production), and only HMAC digests stored.
+- A CSRF token is required on every unsafe request.
+- Every business row has a `workspace_id`; every endpoint verifies membership. Foreign resources answer 404.
+- Uploads are validated by content (magic bytes), extension, size and page count. Storage keys are server-generated.
+- Errors are standardized with request IDs, and there are no stack traces in responses. Logs are structured JSON without secrets.
+- There is an append-only audit trail of operational actions.
 
-Open:
+Details, including known limitations: [docs/security.md](docs/security.md). What is sent to the AI provider: [docs/security.md#privacy](docs/security.md#privacy).
 
-- Web: http://localhost:3000
-- API: http://localhost:8000
-- Swagger: http://localhost:8000/docs
+## Deployment
 
-## Workspace modes
+Next.js + FastAPI + managed PostgreSQL + S3-compatible storage. There's a single-host path (`docker-compose.prod.yml`) and a managed-services path: [docs/deployment.md](docs/deployment.md).
 
-### Overview
+## Demo
 
-The landing page. Current exceptions, priority queue, cermat. brief, supplier signals, trend, issue mix, recurring patterns, anomaly signals, review workflow health and data quality, over 7 / 30 / 90 days or all time. An empty workspace shows onboarding, never sample figures.
+A 2–3 minute walkthrough script: [docs/demo.md](docs/demo.md).
 
-### Single document
+## Future work
 
-Extract one PO, DO, invoice, or receipt and inspect structured fields, line items, confidence, and source evidence.
-
-### Three-way match
-
-Upload one PO + DO + Invoice. cermat. compares ordered, delivered, and invoiced values using deterministic rules.
-
-### Review history
-
-Browse persisted transactions, search by transaction/supplier, filter by workflow state, inspect historical evidence, and resolve/reopen exceptions.
-
-### Ask cermat.
-
-Ask operational questions across the workspace or about one transaction. Answers read like a short analyst brief (headline, supporting lines, exceptions, related transactions) with source chips and an evidence panel. Ask cermat. is read-only: resolving, editing and deleting stay explicit UI actions.
-
-## Workflow states
-
-- **Open** — transaction is still collecting documents or waiting for reconciliation.
-- **Needs review** — reconciliation found one or more active unresolved exceptions.
-- **Resolved** — all active exceptions have been reviewed and closed by a human.
-- **Matched** — deterministic reconciliation found no exceptions.
-
-## Review issue persistence
-
-Each reconciliation exception gets a stable hash based on the business meaning of the discrepancy — code, item, expected/actual values, and source field locations. This means:
-
-- rerunning an unchanged transaction preserves its existing review status and note;
-- a changed discrepancy receives a new review issue;
-- exceptions that disappear on a later reconciliation become inactive rather than polluting the active queue.
-
-## Tests
-
-```bash
-docker compose exec api python -m unittest discover -s tests -v
-```
-
-The Phase 6 suite (`test_intelligence.py`) covers overview counts, period boundaries, priority scoring, billed variance, multi-currency totals, supplier aggregation and issue rate, pattern and anomaly thresholds, resolution times, attention de-duplication, trends and the empty workspace. `test_intelligence_db.py` runs the SQL loaders and attention sync against a separate `cermat_test` database on the same PostgreSQL server (skipped if unreachable).
-
-The test suite also covers clean matching, quantity/price mismatches, stable review-issue identity, and Ask cermat.: every query intent, transaction and supplier scoping, unsupported and no-result questions, follow-ups, grounding checks on model output, and the read-only guarantees. Ask tests use an in-memory snapshot and a fake model, so they need no database or API key.
-
-## Important architecture boundary
-
-The AI layer answers:
-
-> What does this document say?
-
-The reconciliation layer answers:
-
-> Do these values agree?
-
-The review layer answers:
-
-> Has a human accepted or resolved this exception?
-
-Ask cermat. answers:
-
-> What do my records say, and where is the evidence?
-
-Keeping those responsibilities separate makes cermat. easier to test, audit, and explain.
+- A page-level document viewer that highlights the evidence region (the API already exposes `preview_url`).
+- Background extraction queue for very large batches (currently synchronous per document, which is sufficient at SME volumes).
+- Email invitations for workspace members (members currently need an existing account).
+- A shared rate-limit store when running many API replicas.

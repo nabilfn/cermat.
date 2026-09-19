@@ -15,13 +15,19 @@ class DocumentType(str, Enum):
     receipt = "receipt"
 
 
+DocumentStatus = Literal["uploaded", "processing", "extracted", "needs_review", "failed"]
+
+
 class DocumentRecord(BaseModel):
     id: UUID
     filename: str
     document_type: DocumentType
     mime_type: str
     size_bytes: int
-    status: Literal["uploaded", "extracting", "extracted", "needs_review", "failed"]
+    page_count: int | None = None
+    status: DocumentStatus
+    error_code: str | None = None
+    has_source_file: bool = True
     created_at: datetime
 
 
@@ -187,6 +193,7 @@ class ReviewIssueRecord(ReconciliationIssue):
     issue_key: str
     status: Literal["open", "resolved"]
     resolution_note: str | None = None
+    resolved_by_name: str | None = None
     active: bool
     resolved_at: datetime | None = None
     created_at: datetime
@@ -306,7 +313,9 @@ class AskSource(BaseModel):
     source_text: str
     confidence: float | None
     snippet_available: bool
-    # Interface contract for a future page viewer. Always null in Phase 5.
+    # False for demo records, which have no original file to open.
+    has_source_file: bool = True
+    # Interface contract for a future page-level viewer. Always null for now.
     preview_url: str | None = None
 
 
@@ -796,3 +805,97 @@ class AttentionList(BaseModel):
 class AttentionUpdate(BaseModel):
     seen: bool | None = None
     dismissed: bool | None = None
+
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 — auth, workspaces, pagination, audit
+# ---------------------------------------------------------------------------
+
+WorkspaceRole = Literal["owner", "member"]
+
+
+class SignUpRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+    display_name: str = Field(min_length=1, max_length=80)
+    workspace_name: str | None = Field(default=None, max_length=120)
+
+
+class SignInRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class UserRecord(BaseModel):
+    id: UUID
+    email: str
+    display_name: str
+
+
+class WorkspaceSummary(BaseModel):
+    id: UUID
+    name: str
+    role: WorkspaceRole
+    is_demo: bool
+    is_legacy: bool
+
+
+class SessionInfo(BaseModel):
+    user: UserRecord
+    workspaces: list[WorkspaceSummary]
+    csrf_token: str
+
+
+class WorkspaceCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class WorkspaceUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class WorkspaceDelete(BaseModel):
+    confirm_name: str = Field(max_length=120)
+
+
+class MemberRecord(BaseModel):
+    user_id: UUID
+    email: str
+    display_name: str
+    role: WorkspaceRole
+    joined_at: datetime
+
+
+class MemberInvite(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    role: WorkspaceRole = "member"
+
+
+class TransactionPage(BaseModel):
+    items: list[TransactionHistoryRecord]
+    total: int
+    limit: int
+    offset: int
+
+
+class AuditEventRecord(BaseModel):
+    id: UUID
+    action: str
+    entity_type: str
+    entity_id: str | None
+    actor_name: str | None
+    metadata: dict
+    created_at: datetime
+
+
+class AuditPage(BaseModel):
+    items: list[AuditEventRecord]
+    next_before: datetime | None
+
+
+class SupplierPage(BaseModel):
+    items: list[SupplierIntel]
+    total: int
+    limit: int
+    offset: int

@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { api, apiStream, errorMessage, workspaceUrl } from "../../lib/api";
+import { useResource } from "../../lib/useResource";
 
 type DocumentType = "purchase_order" | "delivery_order" | "invoice" | "receipt";
 type Severity = "low" | "medium" | "high";
@@ -27,6 +29,7 @@ type AskSource = {
   source_text: string;
   confidence: number | null;
   snippet_available: boolean;
+  has_source_file: boolean;
   preview_url: string | null;
 };
 
@@ -121,13 +124,20 @@ type AskResponse = {
 type StreamEvent =
   | { stage: "interpreting" | "searching" | "composing" }
   | { stage: "done"; response: AskResponse }
-  | { stage: "error"; status: number; detail: string };
+  | { stage: "error"; error: { code: string; message: string; request_id: string | null } };
 
 type Turn = { id: number; response: AskResponse };
 
 export type AskScope = { id: string; name: string } | null;
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const FALLBACK_SUGGESTIONS = [
+  "What needs my attention?",
+  "Show high-severity issues.",
+  "Which suppliers have unresolved discrepancies?",
+  "Show invoice price mismatches.",
+  "Which transactions were resolved recently?",
+];
+
 
 const STAGE_LABEL: Record<string, string> = {
   checking: "Checking workspace…",
@@ -221,29 +231,6 @@ function filterSummary(response: AskResponse) {
     .join(" · ");
 }
 
-async function readStream(
-  response: Response,
-  onEvent: (event: StreamEvent) => void
-) {
-  if (!response.body) throw new Error("Empty response.");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newline = buffer.indexOf("\n");
-    while (newline >= 0) {
-      const line = buffer.slice(0, newline).trim();
-      buffer = buffer.slice(newline + 1);
-      if (line) onEvent(JSON.parse(line) as StreamEvent);
-      newline = buffer.indexOf("\n");
-    }
-  }
-  if (buffer.trim()) onEvent(JSON.parse(buffer) as StreamEvent);
-}
-
 type AskWorkspaceProps = {
   scope: AskScope;
   onClearScope: () => void;
@@ -265,7 +252,6 @@ export default function AskWorkspace({
   const [activeTurnId, setActiveTurnId] = useState<number | null>(null);
   const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selection, setSelection] = useState<{ id: string; at: string } | null>(null);
   const selectedSourceId = selection?.id ?? null;
   const [context, setContext] = useState<AskConversationContext | null>(null);
@@ -274,25 +260,21 @@ export default function AskWorkspace({
 
   const scopeId = scope?.id ?? null;
 
-  useEffect(() => {
-    // Conversation memory never crosses a scope change.
+  const suggestionKey = scopeId ?? "workspace";
+  const suggestionResource = useResource<{ suggestions: string[] }>(suggestionKey, (signal) =>
+    api<{ suggestions: string[] }>(
+      scopeId ? `/api/v1/ask/suggestions?transaction_id=${scopeId}` : "/api/v1/ask/suggestions",
+      { signal }
+    )
+  );
+  const suggestions = suggestionResource.data?.suggestions ?? (suggestionResource.error ? FALLBACK_SUGGESTIONS : []);
+
+  // Conversation memory never crosses a scope change.
+  const [contextScope, setContextScope] = useState(scopeId);
+  if (contextScope !== scopeId) {
+    setContextScope(scopeId);
     setContext(null);
-    const url = scopeId
-      ? `${API_URL}/api/v1/ask/suggestions?transaction_id=${scopeId}`
-      : `${API_URL}/api/v1/ask/suggestions`;
-    fetch(url)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((payload) => setSuggestions(payload?.suggestions ?? []))
-      .catch(() =>
-        setSuggestions([
-          "What needs my attention?",
-          "Show high-severity issues.",
-          "Which suppliers have unresolved discrepancies?",
-          "Show invoice price mismatches.",
-          "Which transactions were resolved recently?",
-        ])
-      );
-  }, [scopeId]);
+  }
 
   const handledRequest = useRef<number | null>(null);
   useEffect(() => {
@@ -320,49 +302,29 @@ export default function AskWorkspace({
     setSelection(null);
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/ask/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: trimmed,
-          transaction_id: scopeId,
-          context,
-        }),
-      });
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(
-          response.status === 422
-            ? "Questions can be up to 500 characters."
-            : payload?.detail ?? "The cermat. API returned an error."
-        );
-      }
-
       let finished = false;
-      await readStream(response, (event) => {
-        if (event.stage === "done") {
-          finished = true;
-          const id = nextId.current++;
-          setTurns((current) => [{ id, response: event.response }, ...current].slice(0, 12));
-          setActiveTurnId(id);
-          setContext(event.response.context);
-          setQuestion("");
-        } else if (event.stage === "error") {
-          finished = true;
-          setError(event.detail);
-        } else {
-          setStage(event.stage);
+      await apiStream<StreamEvent>(
+        "/api/v1/ask/stream",
+        { question: trimmed, transaction_id: scopeId, context },
+        (event) => {
+          if (event.stage === "done") {
+            finished = true;
+            const id = nextId.current++;
+            setTurns((current) => [{ id, response: event.response }, ...current].slice(0, 12));
+            setActiveTurnId(id);
+            setContext(event.response.context);
+            setQuestion("");
+          } else if (event.stage === "error") {
+            finished = true;
+            setError(event.error.message);
+          } else {
+            setStage(event.stage);
+          }
         }
-      });
+      );
       if (!finished) throw new Error("The answer was interrupted. Try again.");
     } catch (err) {
-      setError(
-        err instanceof TypeError
-          ? "Cannot reach the cermat. API. Check that the API service is running."
-          : err instanceof Error
-            ? err.message
-            : "Something went wrong."
-      );
+      setError(errorMessage(err));
     } finally {
       setStage(null);
     }
@@ -387,7 +349,7 @@ export default function AskWorkspace({
     inputRef.current?.focus();
   }
 
-  const sources = active?.response.sources ?? [];
+  const sources = useMemo(() => active?.response.sources ?? [], [active]);
   const sourceById = useMemo(
     () => new Map(sources.map((source) => [source.id, source])),
     [sources]
@@ -830,12 +792,12 @@ function EvidenceDetail({
 
       <div className="evidenceFooter">
         <span>
-          {source.preview_url ? (
-            <a href={source.preview_url} target="_blank" rel="noreferrer">
-              Open page preview
+          {source.has_source_file ? (
+            <a href={workspaceUrl(`/api/v1/documents/${source.document_id}/file`)} target="_blank" rel="noreferrer">
+              Open source document ↗
             </a>
           ) : (
-            "Page preview not available yet"
+            "Demo record — no source file"
           )}
         </span>
         <button

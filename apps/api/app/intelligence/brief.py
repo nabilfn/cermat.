@@ -21,8 +21,8 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.schemas import BriefResponse, OverviewResponse
 from app.services.ask_llm import BriefModel
-from app.services.grounding import ungrounded
 from app.services.ask_queries import FAMILY_LABELS
+from app.services.grounding import ungrounded
 
 logger = logging.getLogger("cermat.brief")
 

@@ -1,6 +1,4 @@
-// Shared types and formatting for the Overview, supplier detail and attention queue.
-
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Shared API types. Shapes mirror the FastAPI schemas in apps/api/app/schemas.py.
 
 export type Period = "7d" | "30d" | "90d" | "all";
 export type Severity = "low" | "medium" | "high";
@@ -254,63 +252,237 @@ export const PERIOD_LABEL: Record<Period, string> = {
   all: "All time",
 };
 
-export async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`);
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.detail ?? "The cermat. API returned an error.");
-  }
-  return payload as T;
-}
+// ---------------------------------------------------------------------------
+// Phase 7 — identity, workspaces, history, documents, audit
+// ---------------------------------------------------------------------------
 
-export function money(currency: string | null, value: number, signed = false) {
-  const sign = signed ? (value > 0 ? "+" : value < 0 ? "−" : "") : "";
-  const amount = Math.abs(value).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-  return `${sign}${currency ? `${currency} ` : ""}${amount}`;
-}
+export type DocumentType = "purchase_order" | "delivery_order" | "invoice" | "receipt";
+export type DocumentStatus = "uploaded" | "processing" | "extracted" | "needs_review" | "failed";
 
-export function percent(value: number | null, signed = false) {
-  if (value === null) return "—";
-  const sign = signed ? (value > 0 ? "+" : value < 0 ? "−" : "") : "";
-  return `${sign}${Math.abs(value).toFixed(1)}%`;
-}
+export type UserRecord = { id: string; email: string; display_name: string };
 
-export function duration(hours: number | null) {
-  if (hours === null) return "—";
-  if (hours < 1) return `${Math.round(hours * 60)} min`;
-  if (hours < 48) return `${hours.toFixed(1)} h`;
-  return `${(hours / 24).toFixed(1)} d`;
-}
+export type WorkspaceSummary = {
+  id: string;
+  name: string;
+  role: "owner" | "member";
+  is_demo: boolean;
+  is_legacy: boolean;
+};
 
-export function dateLabel(value: string) {
-  return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short" }).format(
-    new Date(value)
-  );
-}
+export type SessionInfo = {
+  user: UserRecord;
+  workspaces: WorkspaceSummary[];
+  csrf_token: string;
+};
 
-export function relativeTime(value: string, now = Date.now()) {
-  const minutes = Math.round((now - new Date(value).getTime()) / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "yesterday" : `${days}d ago`;
-}
+export type MemberRecord = {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: "owner" | "member";
+  joined_at: string;
+};
 
-export function observed(signal: AnomalySignal, value: number | null) {
-  if (value === null) return "—";
-  switch (signal.unit) {
-    case "percent":
-      return percent(value, true);
-    case "amount":
-      return money(signal.currency, value);
-    case "days":
-      return `${value.toFixed(1)} d`;
-    default:
-      return String(Math.round(value * 100) / 100);
-  }
-}
+export type DocumentRecord = {
+  id: string;
+  filename: string;
+  document_type: DocumentType;
+  mime_type: string;
+  size_bytes: number;
+  page_count: number | null;
+  status: DocumentStatus;
+  error_code: string | null;
+  has_source_file: boolean;
+  created_at: string;
+};
+
+export type EvidenceItem = {
+  field_path: string;
+  source_text: string;
+  page: number | null;
+  confidence: number;
+};
+
+export type ExtractionResult = {
+  document_id: string;
+  filename: string;
+  model: string;
+  supplier_name: string | null;
+  supplier_registration_no: string | null;
+  document_number: string | null;
+  document_date: string | null;
+  currency: string | null;
+  subtotal: number | null;
+  tax: number | null;
+  total: number | null;
+  overall_confidence: number;
+  line_items: Array<{
+    description: string;
+    sku: string | null;
+    quantity: number | null;
+    unit_price: number | null;
+    line_total: number | null;
+  }>;
+  evidence: EvidenceItem[];
+  review_reasons: string[];
+};
+
+export type TransactionDocumentSummary = {
+  id: string;
+  filename: string;
+  document_type: DocumentType;
+  status: string;
+  document_number: string | null;
+  supplier_name: string | null;
+  currency: string | null;
+  total: number | null;
+  overall_confidence: number | null;
+};
+
+export type EvidenceReference = {
+  document_id: string;
+  filename: string;
+  document_type: DocumentType;
+  field_path: string;
+  source_text: string;
+  page: number | null;
+  value: string | null;
+};
+
+export type ReconciliationIssue = {
+  code: string;
+  title: string;
+  severity: Severity;
+  item_description: string | null;
+  expected: string | null;
+  actual: string | null;
+  delta: string | null;
+  explanation: string;
+  sources: EvidenceReference[];
+};
+
+export type ReconciliationResult = {
+  transaction_id: string;
+  status: "matched" | "review_required" | "insufficient_data";
+  documents: TransactionDocumentSummary[];
+  summary: {
+    issue_count: number;
+    high: number;
+    medium: number;
+    low: number;
+    matched_lines: number;
+    review_lines: number;
+  };
+  lines: Array<{
+    key: string;
+    description: string;
+    sku: string | null;
+    po_quantity: number | null;
+    delivered_quantity: number | null;
+    invoice_quantity: number | null;
+    po_unit_price: number | null;
+    invoice_unit_price: number | null;
+    status: "matched" | "review_required" | "unmatched";
+  }>;
+  issues: ReconciliationIssue[];
+  generated_at: string;
+};
+
+export type HistoryItem = {
+  id: string;
+  name: string;
+  status: TransactionStatus;
+  created_at: string;
+  updated_at: string;
+  document_count: number;
+  issue_count: number;
+  open_issue_count: number;
+  resolved_issue_count: number;
+  high_count: number;
+  supplier_name: string | null;
+  currency: string | null;
+  total: number | null;
+};
+
+export type TransactionPage = { items: HistoryItem[]; total: number; limit: number; offset: number };
+
+export type TransactionDetail = {
+  id: string;
+  name: string;
+  status: TransactionStatus;
+  created_at: string;
+  updated_at: string;
+  documents: TransactionDocumentSummary[];
+  review: {
+    issue_count: number;
+    open_issue_count: number;
+    resolved_issue_count: number;
+    high_count: number;
+  };
+};
+
+export type ReviewIssue = ReconciliationIssue & {
+  id: string;
+  transaction_id: string;
+  issue_key: string;
+  status: "open" | "resolved";
+  resolution_note: string | null;
+  resolved_by_name: string | null;
+  active: boolean;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Evidence with confidence, from GET /transactions/{id}/context. */
+export type ContextSource = {
+  id: string;
+  label: string;
+  document_id: string;
+  filename: string;
+  document_type: DocumentType;
+  document_number: string | null;
+  page: number | null;
+  field_path: string;
+  value: string | null;
+  source_text: string;
+  confidence: number | null;
+  snippet_available: boolean;
+  has_source_file: boolean;
+};
+
+export type TransactionContext = {
+  issues: Array<{
+    issue_id: string;
+    source_ids: string[];
+    variance: {
+      kind: "money" | "quantity";
+      currency: string | null;
+      delta: number;
+      percentage: number | null;
+      billed_impact: number | null;
+    } | null;
+  }>;
+  sources: ContextSource[];
+};
+
+export type AuditEvent = {
+  id: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  actor_name: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AuditPage = { items: AuditEvent[]; next_before: string | null };
+export type SupplierPage = { items: SupplierIntel[]; total: number; limit: number; offset: number };
+
+export type TransactionRecordLite = {
+  id: string;
+  name: string;
+  status: TransactionStatus;
+  created_at: string;
+  updated_at: string;
+};

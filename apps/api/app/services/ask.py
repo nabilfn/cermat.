@@ -15,10 +15,13 @@ from collections import Counter
 from collections.abc import AsyncIterator
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.intelligence.config import load_settings
+from app.intelligence.dataset import utcnow
 from app.schemas import (
     AskAnswer,
     AskAnswerPoint,
@@ -33,11 +36,8 @@ from app.schemas import (
     AskSupplierRow,
     AskTransactionRow,
 )
-from app.intelligence.config import load_settings
-from app.intelligence.dataset import utcnow
-from app.services.ask_intelligence import INTELLIGENCE_INTENTS, run_intelligence_query
-from app.services.grounding import ungrounded
 from app.services.ask_context import BuiltResult, build_rows, grounded_context
+from app.services.ask_intelligence import INTELLIGENCE_INTENTS, run_intelligence_query
 from app.services.ask_llm import AskModel, ComposedAnswer, PlannerOutput
 from app.services.ask_planner import ResolvedPlan, heuristic_plan, resolve_plan
 from app.services.ask_queries import (
@@ -48,6 +48,7 @@ from app.services.ask_queries import (
     load_snapshot,
     run_query,
 )
+from app.services.grounding import ungrounded
 
 logger = logging.getLogger("cermat.ask")
 
@@ -277,7 +278,6 @@ def compose_from_records(
     if result.result_kind == "suppliers":
         rows: list[AskSupplierRow] = built.suppliers
         top = rows[0]
-        noun = _issue_noun(resolved)
         if plan.filters.issue_type or plan.filters.severity or plan.filters.status:
             status_word = {"open": "unresolved ", "resolved": "resolved "}.get(
                 plan.filters.status or "open", ""
@@ -625,6 +625,7 @@ async def run_ask(
     session: AsyncSession,
     request: AskRequest,
     model: AskModel | None,
+    workspace_id: UUID,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield progress stages, then ``{"stage": "done", "response": AskResponse}``.
 
@@ -637,12 +638,12 @@ async def run_ask(
 
     try:
         yield {"stage": "interpreting"}
-        snapshot = await load_snapshot(session, request.transaction_id)
+        snapshot = await load_snapshot(session, workspace_id, request.transaction_id)
         scope = snapshot.transaction(request.transaction_id)
         if request.transaction_id is not None and scope is None:
             raise AskError(404, "Transaction not found.")
         scope_name = scope.name if scope else None
-        thresholds, _ = await load_settings(session)
+        thresholds, _ = await load_settings(session, workspace_id)
 
         raw_plan, used_model = await _plan(question, snapshot, scope, request.context, model)
         notices: list[str] = []
@@ -760,9 +761,9 @@ async def run_ask(
 
 
 async def ask(
-    session: AsyncSession, request: AskRequest, model: AskModel | None
+    session: AsyncSession, request: AskRequest, model: AskModel | None, workspace_id: UUID
 ) -> AskResponse:
-    async for event in run_ask(session, request, model):
+    async for event in run_ask(session, request, model, workspace_id):
         if event["stage"] == "done":
             return event["response"]
     raise AskError(500, "Ask cermat. could not produce an answer.")

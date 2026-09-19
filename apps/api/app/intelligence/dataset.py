@@ -216,8 +216,8 @@ def _aware(value: datetime | None) -> datetime | None:
 # ---------------------------------------------------------------------------
 
 
-async def load_dataset(session: AsyncSession) -> IntelDataset:
-    """Three projected SELECTs. Read-only."""
+async def load_dataset(session: AsyncSession, workspace_id: UUID) -> IntelDataset:
+    """Three projected SELECTs over one workspace. Read-only."""
     reconciliation = TransactionSetModel.last_reconciliation
     txn_rows = await session.execute(
         select(
@@ -228,7 +228,7 @@ async def load_dataset(session: AsyncSession) -> IntelDataset:
             TransactionSetModel.updated_at,
             reconciliation["lines"].label("lines"),
             reconciliation["generated_at"].as_string().label("reconciled_at"),
-        )
+        ).where(TransactionSetModel.workspace_id == workspace_id)
     )
     transactions: dict[UUID, TxnFact] = {}
     for row in txn_rows.all():
@@ -260,7 +260,9 @@ async def load_dataset(session: AsyncSession) -> IntelDataset:
             data["overall_confidence"].as_float().label("overall_confidence"),
             func.json_array_length(data["evidence"]).label("evidence_count"),
             (data.is_not(None)).label("extracted"),
-        ).join(DocumentModel, TransactionDocumentModel.document_id == DocumentModel.id)
+        )
+        .join(DocumentModel, TransactionDocumentModel.document_id == DocumentModel.id)
+        .where(DocumentModel.workspace_id == workspace_id)
     )
     for row in doc_rows.all():
         txn = transactions.get(row.transaction_id)
@@ -298,7 +300,7 @@ async def load_dataset(session: AsyncSession) -> IntelDataset:
             payload["item_description"].as_string().label("item_description"),
             payload["expected"].as_string().label("expected"),
             payload["actual"].as_string().label("actual"),
-        ).where(ReviewIssueModel.active.is_(True))
+        ).where(ReviewIssueModel.workspace_id == workspace_id, ReviewIssueModel.active.is_(True))
     )
     for row in issue_rows.all():
         txn = transactions.get(row.transaction_id)

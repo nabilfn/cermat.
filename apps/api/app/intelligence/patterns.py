@@ -66,7 +66,7 @@ def quantity_direction(issue: IssueFact) -> str | None:
 def _item_key(txn: TxnFact, issue: IssueFact) -> tuple[str, str] | None:
     if not issue.item_description:
         return None
-    line = next((l for l in txn.lines if l.get("description") == issue.item_description), None)
+    line = next((row for row in txn.lines if row.get("description") == issue.item_description), None)
     sku = (line or {}).get("sku")
     if sku:
         return f"sku-{_normalise_text(sku).replace(' ', '-')}", f"{issue.item_description} ({sku})"

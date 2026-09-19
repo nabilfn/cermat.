@@ -1,4 +1,27 @@
-# Data model — Phase 6
+# Data model
+
+The schema is owned by Alembic (`apps/api/migrations`). `0001_baseline` is the Phase 1–6 schema and is written idempotently, so databases created before Alembic adopt it unchanged. `0002_workspaces_auth_audit` adds tenancy.
+
+## Tenancy and identity (Phase 7)
+
+| Table | Key columns | Notes |
+|---|---|---|
+| `users` | email (unique, lowercased), display_name, password_hash (Argon2id), last_login_at | |
+| `workspaces` | name, is_demo, is_legacy, created_by → users (SET NULL) | `is_legacy`: holds data created before accounts existed |
+| `workspace_members` | workspace_id → workspaces (CASCADE), user_id → users (CASCADE), role | unique (workspace_id, user_id); role ∈ {owner, member} (CHECK) |
+| `auth_sessions` | token_hash (unique HMAC), csrf_hash, user_id (CASCADE), expires_at, last_seen_at | no plaintext tokens |
+| `audit_events` | workspace_id (CASCADE), actor_user_id (SET NULL), action, entity_type, entity_id, metadata_json, request_id, created_at | append-only through the API; index (workspace_id, created_at) |
+
+**Every business row belongs to a workspace.** `documents`, `transaction_sets`, `review_issues` and `attention_events` have a non-null `workspace_id → workspaces ON DELETE CASCADE`. `intelligence_settings` is keyed by `workspace_id`. Deleting a workspace removes all of its data. Stored files are deleted by the API after the rows are gone.
+
+Phase 7 column changes:
+
+- `documents.storage_path` (an absolute container path) became `storage_key` (a server-generated object key, null for demo records). New columns `page_count` and `error_code`, and `uploaded_by → users`. Statuses are `uploaded | processing | extracted | needs_review | failed` (the old `extracting` became `processing`).
+- `transaction_sets.created_by`, `review_issues.resolved_by` (→ users, SET NULL).
+- Attention `event_key` is unique **per workspace** (`uq_attention_workspace_event_key`).
+- Composite indexes: `(workspace_id, updated_at)` on transactions, `(workspace_id, active, status)` on review issues, `(workspace_id, created_at)` on documents and audit events.
+
+The sections below describe the business tables from earlier phases. All of them now carry `workspace_id`.
 
 ## documents
 
@@ -7,7 +30,7 @@
 - document_type
 - MIME type / size
 - status
-- storage path
+- storage key (server-generated object key)
 - extraction model
 - extraction JSON
 - created / updated timestamps

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import base64
-from pathlib import Path
 
-from openai import OpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    OpenAI,
+    RateLimitError,
+)
+from pydantic import ValidationError
 
 from app.config import settings
 from app.schemas import AIExtraction, DocumentType
-
 
 SYSTEM_PROMPT = """You are cermat.'s document extraction engine.
 
@@ -29,61 +35,79 @@ Rules:
 """
 
 
-def _data_url(path: Path, mime_type: str) -> str:
-    encoded = base64.b64encode(path.read_bytes()).decode("utf-8")
-    return f"data:{mime_type};base64,{encoded}"
+class ExtractionError(Exception):
+    """Carries an API error code; the document is kept and marked recoverable."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code  # AI_PROVIDER_ERROR | EXTRACTION_FAILED
+        self.message = message
+
+
+def _data_url(data: bytes, mime_type: str) -> str:
+    return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+def _client() -> OpenAI:
+    # Bounded: a per-request timeout and a small number of SDK retries (with backoff)
+    # for connection errors, 408/429/5xx. Never retries forever.
+    return OpenAI(
+        api_key=settings.openai_api_key,
+        timeout=settings.ai_timeout_seconds,
+        max_retries=settings.ai_max_retries,
+    )
 
 
 def extract_document(
     *,
-    path: Path,
+    data: bytes,
     mime_type: str,
     filename: str,
     document_type: DocumentType,
 ) -> AIExtraction:
+    """Send one document to the configured model and validate the structured result."""
     if not settings.openai_api_key:
-        raise RuntimeError(
-            "OPENAI_API_KEY is not configured. Add it to .env and rebuild/restart the API."
+        raise ExtractionError(
+            "AI_PROVIDER_ERROR",
+            "AI extraction is not configured. Set OPENAI_API_KEY and restart the API.",
         )
-
-    client = OpenAI(api_key=settings.openai_api_key)
 
     prompt = (
         f"Expected document category: {document_type.value}. "
         "Extract the document into the schema. The expected category is a hint only; "
         "do not force fields that are not visible."
     )
-
     if mime_type == "application/pdf":
         content = [
-            {
-                "type": "input_file",
-                "filename": filename,
-                "file_data": _data_url(path, mime_type),
-                "detail": "high",
-            },
+            {"type": "input_file", "filename": filename, "file_data": _data_url(data, mime_type), "detail": "high"},
             {"type": "input_text", "text": prompt},
         ]
     else:
         content = [
             {"type": "input_text", "text": prompt},
-            {
-                "type": "input_image",
-                "image_url": _data_url(path, mime_type),
-                "detail": "high",
-            },
+            {"type": "input_image", "image_url": _data_url(data, mime_type), "detail": "high"},
         ]
 
-    response = client.responses.parse(
-        model=settings.openai_model,
-        input=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": content},
-        ],
-        text_format=AIExtraction,
-    )
+    try:
+        response = _client().responses.parse(
+            model=settings.openai_model,
+            input=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": content},
+            ],
+            text_format=AIExtraction,
+        )
+    except (APITimeoutError, APIConnectionError) as exc:
+        raise ExtractionError("AI_PROVIDER_ERROR", "The AI provider did not respond in time. Try again.") from exc
+    except RateLimitError as exc:
+        raise ExtractionError("AI_PROVIDER_ERROR", "The AI provider is rate limiting requests. Try again shortly.") from exc
+    except AuthenticationError as exc:
+        raise ExtractionError("AI_PROVIDER_ERROR", "The AI provider rejected the configured API key.") from exc
+    except APIStatusError as exc:
+        raise ExtractionError("AI_PROVIDER_ERROR", "The AI provider returned an error.") from exc
+    except ValidationError as exc:
+        raise ExtractionError("EXTRACTION_FAILED", "The model returned data that did not match the schema.") from exc
 
     if response.output_parsed is None:
-        raise RuntimeError("The extraction model did not return a structured result.")
-
+        raise ExtractionError("EXTRACTION_FAILED", "The model did not return a structured result.")
     return response.output_parsed
